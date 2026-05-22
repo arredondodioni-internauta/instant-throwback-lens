@@ -12,7 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as JoinRouteImport } from './routes/join'
+import { Route as HostRouteImport } from './routes/_host'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as HostEventsRouteImport } from './routes/_host.events'
+import { Route as HostEventsNewRouteImport } from './routes/_host.events.new'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -29,10 +32,24 @@ const JoinRoute = JoinRouteImport.update({
   path: '/join',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HostRoute = HostRouteImport.update({
+  id: '/_host',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const HostEventsRoute = HostEventsRouteImport.update({
+  id: '/events',
+  path: '/events',
+  getParentRoute: () => HostRoute,
+} as any)
+const HostEventsNewRoute = HostEventsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => HostEventsRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -40,30 +57,46 @@ export interface FileRoutesByFullPath {
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/events': typeof HostEventsRouteWithChildren
+  '/events/new': typeof HostEventsNewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/events': typeof HostEventsRouteWithChildren
+  '/events/new': typeof HostEventsNewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_host': typeof HostRouteWithChildren
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/_host/events': typeof HostEventsRouteWithChildren
+  '/_host/events/new': typeof HostEventsNewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/join' | '/login' | '/signup'
+  fullPaths: '/' | '/join' | '/login' | '/signup' | '/events' | '/events/new'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/join' | '/login' | '/signup'
-  id: '__root__' | '/' | '/join' | '/login' | '/signup'
+  to: '/' | '/join' | '/login' | '/signup' | '/events' | '/events/new'
+  id:
+    | '__root__'
+    | '/'
+    | '/_host'
+    | '/join'
+    | '/login'
+    | '/signup'
+    | '/_host/events'
+    | '/_host/events/new'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  HostRoute: typeof HostRouteWithChildren
   JoinRoute: typeof JoinRoute
   LoginRoute: typeof LoginRoute
   SignupRoute: typeof SignupRoute
@@ -92,6 +125,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof JoinRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_host': {
+      id: '/_host'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof HostRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -99,11 +139,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_host/events': {
+      id: '/_host/events'
+      path: '/events'
+      fullPath: '/events'
+      preLoaderRoute: typeof HostEventsRouteImport
+      parentRoute: typeof HostRoute
+    }
+    '/_host/events/new': {
+      id: '/_host/events/new'
+      path: '/new'
+      fullPath: '/events/new'
+      preLoaderRoute: typeof HostEventsNewRouteImport
+      parentRoute: typeof HostEventsRoute
+    }
   }
 }
 
+interface HostEventsRouteChildren {
+  HostEventsNewRoute: typeof HostEventsNewRoute
+}
+
+const HostEventsRouteChildren: HostEventsRouteChildren = {
+  HostEventsNewRoute: HostEventsNewRoute,
+}
+
+const HostEventsRouteWithChildren = HostEventsRoute._addFileChildren(
+  HostEventsRouteChildren,
+)
+
+interface HostRouteChildren {
+  HostEventsRoute: typeof HostEventsRouteWithChildren
+}
+
+const HostRouteChildren: HostRouteChildren = {
+  HostEventsRoute: HostEventsRouteWithChildren,
+}
+
+const HostRouteWithChildren = HostRoute._addFileChildren(HostRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  HostRoute: HostRouteWithChildren,
   JoinRoute: JoinRoute,
   LoginRoute: LoginRoute,
   SignupRoute: SignupRoute,
