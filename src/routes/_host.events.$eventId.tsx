@@ -2,8 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import QRCode from "qrcode";
-import JSZip from "jszip";
 import {
   getEventDashboard,
   endEvent,
@@ -40,7 +38,22 @@ function EventDashboard() {
       : "";
 
   useEffect(() => {
-    if (joinUrl) QRCode.toDataURL(joinUrl, { width: 220, margin: 1 }).then(setQr);
+    let cancelled = false;
+    if (!joinUrl) {
+      setQr(null);
+      return;
+    }
+    import("qrcode")
+      .then(({ default: QRCode }) => QRCode.toDataURL(joinUrl, { width: 220, margin: 1 }))
+      .then((url) => {
+        if (!cancelled) setQr(url);
+      })
+      .catch(() => {
+        if (!cancelled) setQr(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [joinUrl]);
 
   async function onEnd() {
@@ -65,6 +78,7 @@ function EventDashboard() {
         toast.info("No photos to download yet.");
         return;
       }
+      const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
       // group counts per guest
       const counters: Record<string, number> = {};

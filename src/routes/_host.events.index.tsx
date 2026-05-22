@@ -5,7 +5,7 @@ import { listMyEvents } from "@/lib/events.functions";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 
-export const Route = createFileRoute("/_host/events")({
+export const Route = createFileRoute("/_host/events/")({
   component: EventsList,
   head: () => ({ meta: [{ title: "My events — Reel" }] }),
 });
