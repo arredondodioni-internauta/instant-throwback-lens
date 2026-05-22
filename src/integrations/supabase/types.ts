@@ -14,7 +14,110 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      events: {
+        Row: {
+          code: string
+          created_at: string
+          ended_at: string | null
+          host_id: string
+          id: string
+          name: string
+          shots_per_guest: number
+          status: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          ended_at?: string | null
+          host_id: string
+          id?: string
+          name: string
+          shots_per_guest?: number
+          status?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          ended_at?: string | null
+          host_id?: string
+          id?: string
+          name?: string
+          shots_per_guest?: number
+          status?: string
+        }
+        Relationships: []
+      }
+      guests: {
+        Row: {
+          created_at: string
+          device_token: string
+          display_name: string
+          event_id: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          device_token?: string
+          display_name: string
+          event_id: string
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          device_token?: string
+          display_name?: string
+          event_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guests_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      photos: {
+        Row: {
+          event_id: string
+          guest_id: string
+          id: string
+          storage_path: string
+          taken_at: string
+        }
+        Insert: {
+          event_id: string
+          guest_id: string
+          id?: string
+          storage_path: string
+          taken_at?: string
+        }
+        Update: {
+          event_id?: string
+          guest_id?: string
+          id?: string
+          storage_path?: string
+          taken_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "photos_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "photos_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
