@@ -1,78 +1,40 @@
-## Concept
+## What's actually happening
 
-A web app that mimics an analog disposable camera for events. The host creates an event, sets a per-guest shot limit, and shares a join code. Guests join with just a name, take a fixed number of photos they cannot review, and the host downloads every photo as a ZIP when the event ends.
+Looking at the session replay + network log for your last attempt:
 
-## User flows
+- You signed up, then signed in, and reached `/events` (host dashboard) successfully.
+- You navigated to `/events/new`, then **clicked "Create event" several times without typing anything into the "Event name" field**.
+- No `createEvent` RPC was fired — because the `<Input name>` is `required`, the browser silently blocks the submit (it shows a tiny native "Please fill this field" hint that's easy to miss on mobile). The button has no `disabled` state and no toast, so it feels broken.
 
-**Host**
-1. Sign up / log in (email + password).
-2. Create event: name, date, shots-per-guest (e.g. 5), optional max guests.
-3. Get a 6-character join code + QR code to share.
-4. Live dashboard: guest count, total photos taken, "End event" button.
-5. After ending: download ZIP of all originals, organized by guest name.
+So the back‑end and auth are fine; the form just looks dead when invalid. That's the bug to fix.
 
-**Guest**
-1. Open join link or enter code + display name. No account needed; identity is stored in `localStorage` so they can close/reopen the tab during the event.
-2. Camera screen: live viewfinder, big shutter button, "3 / 5 left" counter.
-3. Tap shutter → shutter sound + white flash overlay → photo uploads in background → counter decrements. Photo is never shown back.
-4. When shots = 0, see a "Roll finished — photos will be revealed by your host" screen.
+A secondary issue worth handling at the same time: signups currently require email confirmation. If you want to test end‑to‑end without checking an inbox each time, we should turn on auto‑confirm.
 
-## Tech & architecture
+The guest flow (`/join` → `/guest/$eventId`) looks correct on review — no logic bugs in `joinEvent`, `getGuestStatus`, or `takePhoto`. I'll still tighten two small UX things while we're in there.
 
-- **Stack**: TanStack Start (already scaffolded) + Lovable Cloud (Supabase) for auth, Postgres, and Storage.
-- **Code portability**: standard React/TS project. Connect GitHub via the Plus menu → two-way sync. You can clone and iterate in Claude Code; pushes flow back into Lovable.
-- **Camera**: browser `getUserMedia` + `<canvas>` capture → JPEG blob → upload to Supabase Storage. Falls back to a file `<input capture="environment">` if camera API fails.
-- **ZIP export**: client-side `jszip` — host's browser fetches signed URLs for all event photos and zips them. Avoids server memory limits.
+## Plan
 
-### Routes
+### 1. Make the "New event" form obviously responsive
+File: `src/routes/_host.events.new.tsx`
+- Disable "Create event" until `name.trim().length > 0` and shots is a valid number — so users see immediately that something is missing instead of clicking a dead button.
+- Trim the name before submitting.
+- Show a toast on validation failure as a backup.
+- Keep the existing `createEvent` server function as-is (it works).
 
-```text
-src/routes/
-  index.tsx                    -> Landing: "Host an event" / "Join with code"
-  login.tsx                    -> Host auth
-  signup.tsx
-  join.tsx                     -> Code entry + name
-  _host/                       -> Layout guarding host auth
-    events.tsx                 -> Host's event list
-    events.new.tsx             -> Create event
-    events.$eventId.tsx        -> Live dashboard + end + download
-  guest.$eventId.tsx           -> Guest camera screen (no auth)
-```
+### 2. Auto-confirm host email signups (optional but recommended for testing)
+- Enable `auto-confirm email signups` in auth config so signing up immediately logs you in. You can flip this back off before going live.
 
-### Database
+### 3. Light review/fixes on the guest path
+Files: `src/routes/join.tsx`, `src/routes/guest.$eventId.tsx`, `src/lib/events.functions.ts`
+- `join.tsx`: trim/uppercase the code before submit (already uppercased on input, but make sure no stray spaces).
+- `guest.$eventId.tsx`: when `getGuestStatus` fails (e.g. stale `deviceToken` after event was deleted), we already redirect to `/join` — confirmed correct.
+- `takePhoto`: confirm FormData round-trip works with the global `attachSupabaseAuth` middleware (it does — it only adds a header, doesn't touch the body). No code change needed.
+- Add a small "Joining…" disabled state styling fix is already in place — no change.
 
-- `events` — id, host_id (auth.users), name, code (unique 6-char), shots_per_guest, status ('active'|'ended'), created_at, ended_at
-- `guests` — id, event_id, display_name, device_token (uuid stored in guest's localStorage), created_at
-- `photos` — id, event_id, guest_id, storage_path, taken_at
+### 4. Verify
+- Sign in as host → `/events/new` → notice button is disabled until name is filled → fill name → submit → land on event dashboard with code + QR.
+- Open `/join?code=XYZ` in a second window → enter name → camera screen loads with `5/5` counter.
 
-RLS:
-- Hosts: full access to their own events, guests, and photos.
-- Guests (anon): can insert into `guests` with a valid event code; can insert into `photos` only if their guest row's remaining shot count > 0 (enforced by a server function, not a raw insert).
-- Guests cannot select photos. Ever.
-
-Storage bucket: `event-photos`, private. Host fetches signed URLs server-side for the ZIP.
-
-### Server functions (`createServerFn`)
-
-- `joinEvent({ code, displayName })` → creates guest row, returns device_token + event metadata.
-- `recordPhoto({ deviceToken, eventId, storagePath })` → atomic check of remaining shots, insert photo or reject.
-- `endEvent({ eventId })` → host-only, flips status to ended.
-- `getEventPhotosForDownload({ eventId })` → host-only, returns signed URLs grouped by guest.
-
-## Out of scope (v1)
-
-- Vintage/film-grain filter (we can add later as a toggle).
-- Public guest gallery / per-guest reveal.
-- Email magic links for guests.
-- Native mobile app — runs as a PWA-friendly web app.
-
-## Build order
-
-1. Enable Lovable Cloud + host email/password auth.
-2. DB schema + RLS + storage bucket.
-3. Landing, host auth, event create + dashboard.
-4. Guest join flow + camera capture + upload.
-5. End-event + ZIP download.
-6. Polish: shutter sound, flash animation, counter, "roll finished" screen.
-
-Ready to switch to build mode whenever you approve.
+## Out of scope
+- No DB schema changes.
+- No changes to camera capture, ZIP export, or styling beyond the form's disabled state.

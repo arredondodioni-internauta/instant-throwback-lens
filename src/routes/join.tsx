@@ -28,7 +28,7 @@ function JoinPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      const res = await join({ data: { code, displayName: name } });
+      const res = await join({ data: { code: code.trim().toUpperCase(), displayName: name.trim() } });
       localStorage.setItem(`reel:event:${res.eventId}`, res.deviceToken);
       nav({ to: "/guest/$eventId", params: { eventId: res.eventId } });
     } catch (err: any) {
