@@ -21,15 +21,27 @@ function NewEvent() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) {
+      toast.error("Please enter an event name.");
+      return;
+    }
+    if (!Number.isFinite(shots) || shots < 1 || shots > 100) {
+      toast.error("Shots per guest must be between 1 and 100.");
+      return;
+    }
     setBusy(true);
     try {
-      const ev = await create({ data: { name, shotsPerGuest: shots } });
+      const ev = await create({ data: { name: trimmed, shotsPerGuest: shots } });
       nav({ to: "/events/$eventId", params: { eventId: ev.id } });
     } catch (err: any) {
       toast.error(err?.message ?? "Failed");
       setBusy(false);
     }
   }
+
+  const canSubmit =
+    !busy && name.trim().length > 0 && Number.isFinite(shots) && shots >= 1 && shots <= 100;
 
   return (
     <main className="max-w-md mx-auto px-6 py-10">
@@ -44,7 +56,7 @@ function NewEvent() {
           <Input id="shots" type="number" min={1} max={100} required value={shots} onChange={(e) => setShots(Number(e.target.value))} />
           <p className="text-xs text-muted-foreground">Each guest will only be able to take this many photos.</p>
         </div>
-        <Button type="submit" disabled={busy} className="w-full h-11">
+        <Button type="submit" disabled={!canSubmit} className="w-full h-11">
           {busy ? "Creating…" : "Create event"}
         </Button>
       </form>
