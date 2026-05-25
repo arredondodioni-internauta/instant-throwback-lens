@@ -1,40 +1,62 @@
-## What's actually happening
+## Objetivo
+Hacer que el gesto de pinza controle el zoom de la cámara dentro del preview, sin escalar la página, y que la experiencia se sienta más nativa en iPhone.
 
-Looking at the session replay + network log for your last attempt:
+## Qué voy a cambiar
 
-- You signed up, then signed in, and reached `/events` (host dashboard) successfully.
-- You navigated to `/events/new`, then **clicked "Create event" several times without typing anything into the "Event name" field**.
-- No `createEvent` RPC was fired — because the `<Input name>` is `required`, the browser silently blocks the submit (it shows a tiny native "Please fill this field" hint that's easy to miss on mobile). The button has no `disabled` state and no toast, so it feels broken.
+### 1. Endurecer el bloqueo de zoom del navegador en la pantalla de cámara
+Actualizaré la pantalla `src/routes/guest.$eventId.tsx` para bloquear no solo el scroll, sino también los gestos del navegador que iOS Safari todavía puede interpretar como page zoom.
 
-So the back‑end and auth are fine; the form just looks dead when invalid. That's the bug to fix.
+Esto incluye:
+- bloquear `gesturestart / gesturechange / gestureend` mientras la cámara está abierta
+- interceptar eventos multitouch a nivel documento solo durante esa ruta
+- mantener `viewport-fit=cover` y desactivar el escalado de página mientras el usuario está en la cámara
+- restaurar todo limpiamente al salir de la pantalla
 
-A secondary issue worth handling at the same time: signups currently require email confirmation. If you want to test end‑to‑end without checking an inbox each time, we should turn on auto‑confirm.
+### 2. Hacer el pinch-to-zoom más parecido a cámara nativa
+Reemplazaré la lógica actual de pinch por una implementación más robusta para que el gesto cambie el zoom del lente de forma continua.
 
-The guest flow (`/join` → `/guest/$eventId`) looks correct on review — no logic bugs in `joinEvent`, `getGuestStatus`, or `takePhoto`. I'll still tighten two small UX things while we're in there.
+Esto incluye:
+- usar una referencia estable del zoom actual para evitar cierres obsoletos durante el gesto
+- calcular el zoom desde la distancia inicial de los dedos con suavizado continuo
+- evitar saltos por re-render mientras la pinza sigue activa
+- aplicar el zoom al `MediaStreamTrack` en tiempo real
+- priorizar el zoom nativo del track cuando el dispositivo lo soporte
 
-## Plan
+### 3. Mejorar compatibilidad con iPhone/Safari
+Agregaré fallback defensivo para los casos donde Safari expone capacidades limitadas o aplica restricciones de forma distinta.
 
-### 1. Make the "New event" form obviously responsive
-File: `src/routes/_host.events.new.tsx`
-- Disable "Create event" until `name.trim().length > 0` and shots is a valid number — so users see immediately that something is missing instead of clicking a dead button.
-- Trim the name before submitting.
-- Show a toast on validation failure as a backup.
-- Keep the existing `createEvent` server function as-is (it works).
+Esto incluye:
+- leer y validar capacidades del track antes de aplicar zoom
+- reintentar la aplicación de constraints de zoom con un flujo más compatible
+- detectar cuando el dispositivo no soporta zoom real y degradar la UI de forma segura
+- evitar que la UI muestre un control de zoom “activo” cuando el hardware no lo permite
 
-### 2. Auto-confirm host email signups (optional but recommended for testing)
-- Enable `auto-confirm email signups` in auth config so signing up immediately logs you in. You can flip this back off before going live.
+### 4. Ajustar la experiencia full-screen del visor
+Mantendré el visor como experiencia inmersiva real, evitando que cualquier elemento de layout contribuya al page scaling o al scroll accidental.
 
-### 3. Light review/fixes on the guest path
-Files: `src/routes/join.tsx`, `src/routes/guest.$eventId.tsx`, `src/lib/events.functions.ts`
-- `join.tsx`: trim/uppercase the code before submit (already uppercased on input, but make sure no stray spaces).
-- `guest.$eventId.tsx`: when `getGuestStatus` fails (e.g. stale `deviceToken` after event was deleted), we already redirect to `/join` — confirmed correct.
-- `takePhoto`: confirm FormData round-trip works with the global `attachSupabaseAuth` middleware (it does — it only adds a header, doesn't touch the body). No code change needed.
-- Add a small "Joining…" disabled state styling fix is already in place — no change.
+Esto incluye:
+- revisar el shell de la ruta para asegurar que no haya interferencia global con la cámara
+- reforzar estilos de touch behavior en el contenedor del visor
+- conservar safe areas de iPhone sin sacrificar el área útil del preview
 
-### 4. Verify
-- Sign in as host → `/events/new` → notice button is disabled until name is filled → fill name → submit → land on event dashboard with code + QR.
-- Open `/join?code=XYZ` in a second window → enter name → camera screen loads with `5/5` counter.
+## Archivos a tocar
+- `src/routes/guest.$eventId.tsx`
+- posiblemente `src/routes/__root.tsx` solo si hace falta endurecer el `meta viewport` global sin romper el resto de la app
 
-## Out of scope
-- No DB schema changes.
-- No changes to camera capture, ZIP export, or styling beyond the form's disabled state.
+## Resultado esperado
+- hacer pinch dentro del visor ya no ampliará la webpage
+- el gesto controlará el zoom de la cámara cuando el dispositivo lo soporte
+- el cambio de zoom se sentirá continuo y estable
+- la pantalla de cámara seguirá ocupando todo el viewport sin scroll
+
+## Detalles técnicos
+```text
+Pinch gesture
+  -> calcula distancia entre 2 toques
+  -> convierte esa variación en zoom continuo
+  -> clamp entre min/max del track
+  -> applyConstraints({ advanced: [{ zoom }] })
+  -> bloquea gestures del browser mientras la ruta está montada
+```
+
+Si el navegador/dispositivo no ofrece zoom nativo del lente, dejaré el comportamiento protegido para que al menos no se haga zoom de página y el control visual no resulte engañoso.

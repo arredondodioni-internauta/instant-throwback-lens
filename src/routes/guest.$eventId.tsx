@@ -33,15 +33,27 @@ function GuestCamera() {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number; step: number } | null>(null);
   const [zoom, setZoom] = useState(1);
+  // Live refs so the touch handlers always read the current zoom/caps without
+  // re-binding listeners (which was causing stale-closure jumps mid-pinch).
+  const zoomRef = useRef(1);
+  const zoomCapsRef = useRef<{ min: number; max: number; step: number } | null>(null);
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+  useEffect(() => {
+    zoomCapsRef.current = zoomCaps;
+  }, [zoomCaps]);
 
   // Lock the page into a true full-screen, no-scroll, no-pinch-zoom camera shell.
   useEffect(() => {
     const prevHtmlOverflow = document.documentElement.style.overflow;
     const prevBodyOverflow = document.body.style.overflow;
     const prevBodyBg = document.body.style.backgroundColor;
+    const prevTouchAction = document.documentElement.style.touchAction;
     document.documentElement.style.overflow = "hidden";
     document.body.style.overflow = "hidden";
     document.body.style.backgroundColor = "#000";
+    document.documentElement.style.touchAction = "none";
 
     // Tighten the viewport meta so iOS doesn't double-tap / pinch-zoom the page.
     const existing = document.querySelector('meta[name="viewport"]') as HTMLMetaElement | null;
@@ -54,11 +66,35 @@ function GuestCamera() {
     );
     if (!existing) document.head.appendChild(meta);
 
+    // Block iOS Safari's proprietary pinch/double-tap page zoom gestures and
+    // any default multi-touch behavior that would scale the webpage.
+    const blockGesture = (e: Event) => e.preventDefault();
+    const blockMultiTouch = (e: TouchEvent) => {
+      if (e.touches.length > 1) e.preventDefault();
+    };
+    let lastTouchEnd = 0;
+    const blockDoubleTap = (e: TouchEvent) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 350) e.preventDefault();
+      lastTouchEnd = now;
+    };
+    document.addEventListener("gesturestart", blockGesture as EventListener);
+    document.addEventListener("gesturechange", blockGesture as EventListener);
+    document.addEventListener("gestureend", blockGesture as EventListener);
+    document.addEventListener("touchmove", blockMultiTouch, { passive: false });
+    document.addEventListener("touchend", blockDoubleTap, { passive: false });
+
     return () => {
       document.documentElement.style.overflow = prevHtmlOverflow;
       document.body.style.overflow = prevBodyOverflow;
       document.body.style.backgroundColor = prevBodyBg;
+      document.documentElement.style.touchAction = prevTouchAction;
       if (prevViewport !== null) meta.setAttribute("content", prevViewport);
+      document.removeEventListener("gesturestart", blockGesture as EventListener);
+      document.removeEventListener("gesturechange", blockGesture as EventListener);
+      document.removeEventListener("gestureend", blockGesture as EventListener);
+      document.removeEventListener("touchmove", blockMultiTouch);
+      document.removeEventListener("touchend", blockDoubleTap);
     };
   }, []);
 
@@ -139,40 +175,47 @@ function GuestCamera() {
     }
   }, [zoom, zoomCaps]);
 
-  // Pinch-to-zoom inside the viewfinder (without zooming the page).
+  // Pinch-to-zoom inside the viewfinder. Listeners are bound once and read
+  // the current zoom/caps from refs so updates during the gesture don't
+  // re-bind the handlers or reset the starting point.
   useEffect(() => {
     const el = viewfinderRef.current;
-    if (!el || !zoomCaps) return;
+    if (!el) return;
     let startDist = 0;
-    let startZoom = zoom;
+    let startZoom = 1;
 
     const dist = (touches: TouchList) => {
-      const [a, b] = [touches[0], touches[1]];
-      const dx = a.clientX - b.clientX;
-      const dy = a.clientY - b.clientY;
-      return Math.hypot(dx, dy);
+      const a = touches[0];
+      const b = touches[1];
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
     };
 
     const onStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        startDist = dist(e.touches);
-        startZoom = zoom;
+      if (e.touches.length >= 2) {
         e.preventDefault();
+        startDist = dist(e.touches);
+        startZoom = zoomRef.current;
       }
     };
     const onMove = (e: TouchEvent) => {
-      if (e.touches.length === 2 && startDist > 0) {
+      if (e.touches.length >= 2) {
         e.preventDefault();
+        const caps = zoomCapsRef.current;
+        if (!caps || startDist <= 0) return;
         const ratio = dist(e.touches) / startDist;
-        const range = zoomCaps.max - zoomCaps.min;
-        const next = Math.min(
-          zoomCaps.max,
-          Math.max(zoomCaps.min, startZoom * ratio),
-        );
-        // smooth-ish: snap to step
-        const stepped = Math.round(next / zoomCaps.step) * zoomCaps.step;
-        setZoom(Math.min(zoomCaps.max, Math.max(zoomCaps.min, stepped)));
-        void range;
+        const next = Math.min(caps.max, Math.max(caps.min, startZoom * ratio));
+        // Apply directly to the track for smooth, continuous zoom — bypass
+        // React render latency during the gesture.
+        const track = trackRef.current;
+        if (track) {
+          try {
+            (track.applyConstraints as any)({ advanced: [{ zoom: next }] }).catch(() => {});
+          } catch {
+            // ignore
+          }
+        }
+        zoomRef.current = next;
+        setZoom(next);
       }
     };
     const onEnd = () => {
@@ -189,7 +232,7 @@ function GuestCamera() {
       el.removeEventListener("touchend", onEnd);
       el.removeEventListener("touchcancel", onEnd);
     };
-  }, [zoomCaps, zoom]);
+  }, []);
 
   async function shoot() {
     if (busy || !status || !videoRef.current) return;
