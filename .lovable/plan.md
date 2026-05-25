@@ -1,62 +1,60 @@
-## Objetivo
-Hacer que el gesto de pinza controle el zoom de la cámara dentro del preview, sin escalar la página, y que la experiencia se sienta más nativa en iPhone.
+## Problema
+El pinch sigue ampliando la página por dos motivos:
 
-## Qué voy a cambiar
+1. El bloqueo de page-zoom se aplica tarde desde un `useEffect` en la ruta de cámara. En iPhone Safari el comportamiento de pinch del navegador suele decidirse desde el viewport inicial del documento, así que cambiarlo después de navegar no es confiable.
+2. Aunque el gesto llegue al visor, el `MediaStreamTrack` solo puede hacer zoom real si el navegador expone `capabilities.zoom`. En iOS y en algunos Android esto no siempre existe, así que el gesto parece "no hacer nada" dentro de la cámara.
 
-### 1. Endurecer el bloqueo de zoom del navegador en la pantalla de cámara
-Actualizaré la pantalla `src/routes/guest.$eventId.tsx` para bloquear no solo el scroll, sino también los gestos del navegador que iOS Safari todavía puede interpretar como page zoom.
+## Plan
 
-Esto incluye:
-- bloquear `gesturestart / gesturechange / gestureend` mientras la cámara está abierta
-- interceptar eventos multitouch a nivel documento solo durante esa ruta
-- mantener `viewport-fit=cover` y desactivar el escalado de página mientras el usuario está en la cámara
-- restaurar todo limpiamente al salir de la pantalla
+### 1. Endurecer la prevención de page-zoom desde el shell raíz
+Actualizaré `src/routes/__root.tsx` para que el viewport del documento ya salga preparado para una experiencia app-like en móvil, con `viewport-fit=cover` y configuración compatible para que iPhone y Android no interpreten el pinch como zoom del navegador.
 
-### 2. Hacer el pinch-to-zoom más parecido a cámara nativa
-Reemplazaré la lógica actual de pinch por una implementación más robusta para que el gesto cambie el zoom del lente de forma continua.
+### 2. Activar un "camera mode" global cuando la ruta de cámara esté abierta
+En `src/routes/guest.$eventId.tsx` mantendré el bloqueo de gestos del navegador mientras la cámara esté montada, reforzando overscroll, scroll accidental y gestos multitouch a nivel documento, y limpiando todo al salir.
 
-Esto incluye:
-- usar una referencia estable del zoom actual para evitar cierres obsoletos durante el gesto
-- calcular el zoom desde la distancia inicial de los dedos con suavizado continuo
-- evitar saltos por re-render mientras la pinza sigue activa
-- aplicar el zoom al `MediaStreamTrack` en tiempo real
-- priorizar el zoom nativo del track cuando el dispositivo lo soporte
+### 3. Reforzar el pinch-to-zoom dentro del visor
+Haré el gesto más estable:
+- refs estables para zoom actual y track activo
+- cálculo continuo desde la distancia inicial de los dedos
+- aplicación directa al track en tiempo real cuando hay soporte nativo
+- prevención de scroll/page-zoom durante todo el gesto
 
-### 3. Mejorar compatibilidad con iPhone/Safari
-Agregaré fallback defensivo para los casos donde Safari expone capacidades limitadas o aplica restricciones de forma distinta.
+### 4. Fallback honesto cuando no hay zoom nativo
+Si el dispositivo/navegador no expone `zoom` en `MediaTrackCapabilities` (frecuente en iPhone y en algunos Android):
+- ocultar/desactivar la UI de zoom nativo
+- igualmente bloquear el page-zoom para que el encuadre no se rompa
+- preferir cambiar de cámara (frontal/trasera) cuando ayude, sin fingir un zoom inexistente
 
-Esto incluye:
-- leer y validar capacidades del track antes de aplicar zoom
-- reintentar la aplicación de constraints de zoom con un flujo más compatible
-- detectar cuando el dispositivo no soporta zoom real y degradar la UI de forma segura
-- evitar que la UI muestre un control de zoom “activo” cuando el hardware no lo permite
-
-### 4. Ajustar la experiencia full-screen del visor
-Mantendré el visor como experiencia inmersiva real, evitando que cualquier elemento de layout contribuya al page scaling o al scroll accidental.
-
-Esto incluye:
-- revisar el shell de la ruta para asegurar que no haya interferencia global con la cámara
-- reforzar estilos de touch behavior en el contenedor del visor
-- conservar safe areas de iPhone sin sacrificar el área útil del preview
+### 5. Validar iPhone y Android
+Comprobaré que el resultado cumpla en ambos:
+- pinch dentro de la cámara nunca amplía la webpage
+- el visor ocupa toda la pantalla útil sin scroll
+- si hay soporte nativo de zoom, el gesto controla el lente dentro del preview
+- si no hay soporte nativo, el gesto deja de sentirse roto y no interfiere con la captura
 
 ## Archivos a tocar
+- `src/routes/__root.tsx`
 - `src/routes/guest.$eventId.tsx`
-- posiblemente `src/routes/__root.tsx` solo si hace falta endurecer el `meta viewport` global sin romper el resto de la app
-
-## Resultado esperado
-- hacer pinch dentro del visor ya no ampliará la webpage
-- el gesto controlará el zoom de la cámara cuando el dispositivo lo soporte
-- el cambio de zoom se sentirá continuo y estable
-- la pantalla de cámara seguirá ocupando todo el viewport sin scroll
+- posiblemente `src/styles.css` para reglas globales de touch/overscroll en mobile fullscreen
 
 ## Detalles técnicos
 ```text
-Pinch gesture
-  -> calcula distancia entre 2 toques
-  -> convierte esa variación en zoom continuo
-  -> clamp entre min/max del track
+Root viewport
+  -> fija viewport-fit=cover y reglas compatibles con iPhone/Android
+
+Guest camera route mounted
+  -> activa camera-mode global
+  -> bloquea page gestures / overscroll
+  -> monta pinch handlers solo sobre el visor
+
+If track.getCapabilities().zoom exists
   -> applyConstraints({ advanced: [{ zoom }] })
-  -> bloquea gestures del browser mientras la ruta está montada
+Else
+  -> no fake native zoom UI
+  -> page zoom sigue bloqueado para no romper el encuadre
 ```
 
-Si el navegador/dispositivo no ofrece zoom nativo del lente, dejaré el comportamiento protegido para que al menos no se haga zoom de página y el control visual no resulte engañoso.
+## Resultado esperado
+- En iPhone y Android el pinch deja de ampliar la página.
+- Donde haya soporte real de zoom del track, el gesto controla la cámara.
+- Donde no lo haya, la app sigue siendo usable y no parece averiada.
