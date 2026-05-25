@@ -18,6 +18,8 @@ function GuestCamera() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
+  const viewfinderRef = useRef<HTMLDivElement>(null);
   const [facing, setFacing] = useState<"user" | "environment">("environment");
   const [status, setStatus] = useState<{
     displayName: string;
@@ -29,6 +31,36 @@ function GuestCamera() {
   const [flashing, setFlashing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number; step: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
+
+  // Lock the page into a true full-screen, no-scroll, no-pinch-zoom camera shell.
+  useEffect(() => {
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevBodyBg = document.body.style.backgroundColor;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    document.body.style.backgroundColor = "#000";
+
+    // Tighten the viewport meta so iOS doesn't double-tap / pinch-zoom the page.
+    const existing = document.querySelector('meta[name="viewport"]') as HTMLMetaElement | null;
+    const prevViewport = existing?.getAttribute("content") ?? null;
+    const meta = existing ?? document.createElement("meta");
+    meta.setAttribute("name", "viewport");
+    meta.setAttribute(
+      "content",
+      "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover",
+    );
+    if (!existing) document.head.appendChild(meta);
+
+    return () => {
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+      document.body.style.backgroundColor = prevBodyBg;
+      if (prevViewport !== null) meta.setAttribute("content", prevViewport);
+    };
+  }, []);
 
   // Load guest status from device token
   useEffect(() => {
@@ -53,8 +85,13 @@ function GuestCamera() {
         if (streamRef.current) {
           streamRef.current.getTracks().forEach((t) => t.stop());
         }
+        // Request the highest resolution the device can offer (no square cap).
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 1280 } },
+          video: {
+            facingMode: { ideal: facing },
+            width: { ideal: 4096 },
+            height: { ideal: 2160 },
+          },
           audio: false,
         });
         if (cancelled) {
@@ -62,8 +99,19 @@ function GuestCamera() {
           return;
         }
         streamRef.current = stream;
+        const track = stream.getVideoTracks()[0] ?? null;
+        trackRef.current = track;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+        }
+        // Detect optical/digital zoom capability and reset to 1x on (re)start.
+        const caps: any = track?.getCapabilities?.() ?? {};
+        if (caps.zoom && typeof caps.zoom.min === "number" && typeof caps.zoom.max === "number") {
+          setZoomCaps({ min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step ?? 0.1 });
+          setZoom(caps.zoom.min);
+        } else {
+          setZoomCaps(null);
+          setZoom(1);
         }
         setCameraError(null);
       } catch (err: any) {
@@ -74,8 +122,74 @@ function GuestCamera() {
     return () => {
       cancelled = true;
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      trackRef.current = null;
     };
   }, [facing, status?.eventStatus]);
+
+  // Apply zoom to the active track whenever it changes.
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track || !zoomCaps) return;
+    const clamped = Math.min(zoomCaps.max, Math.max(zoomCaps.min, zoom));
+    try {
+      // advanced constraints are required on some browsers for `zoom`
+      (track.applyConstraints as any)({ advanced: [{ zoom: clamped }] }).catch(() => {});
+    } catch {
+      // ignore
+    }
+  }, [zoom, zoomCaps]);
+
+  // Pinch-to-zoom inside the viewfinder (without zooming the page).
+  useEffect(() => {
+    const el = viewfinderRef.current;
+    if (!el || !zoomCaps) return;
+    let startDist = 0;
+    let startZoom = zoom;
+
+    const dist = (touches: TouchList) => {
+      const [a, b] = [touches[0], touches[1]];
+      const dx = a.clientX - b.clientX;
+      const dy = a.clientY - b.clientY;
+      return Math.hypot(dx, dy);
+    };
+
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        startDist = dist(e.touches);
+        startZoom = zoom;
+        e.preventDefault();
+      }
+    };
+    const onMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && startDist > 0) {
+        e.preventDefault();
+        const ratio = dist(e.touches) / startDist;
+        const range = zoomCaps.max - zoomCaps.min;
+        const next = Math.min(
+          zoomCaps.max,
+          Math.max(zoomCaps.min, startZoom * ratio),
+        );
+        // smooth-ish: snap to step
+        const stepped = Math.round(next / zoomCaps.step) * zoomCaps.step;
+        setZoom(Math.min(zoomCaps.max, Math.max(zoomCaps.min, stepped)));
+        void range;
+      }
+    };
+    const onEnd = () => {
+      startDist = 0;
+    };
+
+    el.addEventListener("touchstart", onStart, { passive: false });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, [zoomCaps, zoom]);
 
   async function shoot() {
     if (busy || !status || !videoRef.current) return;
@@ -88,17 +202,32 @@ function GuestCamera() {
     playShutter();
     setTimeout(() => setFlashing(false), 120);
 
-    const video = videoRef.current;
-    const w = video.videoWidth;
-    const h = video.videoHeight;
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(video, 0, 0, w, h);
-    const blob: Blob = await new Promise((resolve) =>
-      canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.88),
-    );
+    let blob: Blob | null = null;
+    // Prefer ImageCapture for full-sensor resolution when available.
+    const track = trackRef.current;
+    const ImageCaptureCtor = (window as any).ImageCapture;
+    if (track && ImageCaptureCtor) {
+      try {
+        const ic = new ImageCaptureCtor(track);
+        // takePhoto returns the native JPEG at the photo resolution
+        blob = await ic.takePhoto();
+      } catch {
+        blob = null;
+      }
+    }
+    if (!blob) {
+      const video = videoRef.current;
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(video, 0, 0, w, h);
+      blob = await new Promise<Blob>((resolve) =>
+        canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.95),
+      );
+    }
 
     const token = localStorage.getItem(`reel:event:${eventId}`)!;
     const fd = new FormData();
@@ -115,12 +244,16 @@ function GuestCamera() {
   }
 
   if (!status) {
-    return <main className="min-h-screen flex items-center justify-center bg-black text-white">Loading…</main>;
+    return (
+      <main className="fixed inset-0 flex items-center justify-center bg-black text-white">
+        Loading…
+      </main>
+    );
   }
 
   if (status.eventStatus === "ended") {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center bg-black text-white px-6 text-center">
+      <main className="fixed inset-0 flex flex-col items-center justify-center bg-black text-white px-6 text-center">
         <h1 className="font-serif text-3xl mb-2">The roll is in.</h1>
         <p className="text-white/70 max-w-sm">
           {status.eventName} has ended. Your host will share the photos soon.
@@ -133,7 +266,7 @@ function GuestCamera() {
 
   if (remaining <= 0) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center bg-black text-white px-6 text-center">
+      <main className="fixed inset-0 flex flex-col items-center justify-center bg-black text-white px-6 text-center">
         <h1 className="font-serif text-3xl mb-2">Roll finished.</h1>
         <p className="text-white/70 max-w-sm">
           You used all {status.shotsPerGuest} shots. Your host will share the photos when the
@@ -144,9 +277,15 @@ function GuestCamera() {
   }
 
   return (
-    <main className="min-h-screen bg-black text-white flex flex-col">
+    <main
+      className="fixed inset-0 bg-black text-white flex flex-col overflow-hidden select-none"
+      style={{ touchAction: "none" }}
+    >
       {/* Top bar */}
-      <div className="px-5 py-4 flex items-center justify-between text-sm">
+      <div
+        className="px-5 flex items-center justify-between text-sm shrink-0"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)", paddingBottom: 12 }}
+      >
         <div>
           <div className="text-white/60 text-xs uppercase tracking-wider">{status.eventName}</div>
           <div className="font-serif">{status.displayName}</div>
@@ -158,7 +297,11 @@ function GuestCamera() {
       </div>
 
       {/* Viewfinder */}
-      <div className="relative flex-1 overflow-hidden bg-black">
+      <div
+        ref={viewfinderRef}
+        className="relative flex-1 overflow-hidden bg-black"
+        style={{ touchAction: "none" }}
+      >
         {cameraError ? (
           <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-white/70">
             {cameraError}. Please allow camera access.
@@ -180,10 +323,30 @@ function GuestCamera() {
         />
         {/* Viewfinder frame */}
         <div className="absolute inset-4 border border-white/20 rounded-sm pointer-events-none" />
+        {/* Zoom indicator + slider */}
+        {zoomCaps && (
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-4 flex flex-col items-center gap-2 w-[70%] max-w-xs">
+            <div className="text-xs font-mono bg-black/50 backdrop-blur px-2 py-0.5 rounded-full">
+              {zoom.toFixed(1)}x
+            </div>
+            <input
+              type="range"
+              min={zoomCaps.min}
+              max={zoomCaps.max}
+              step={zoomCaps.step}
+              value={zoom}
+              onChange={(e) => setZoom(parseFloat(e.target.value))}
+              className="w-full accent-primary"
+            />
+          </div>
+        )}
       </div>
 
       {/* Bottom controls */}
-      <div className="px-5 py-6 flex items-center justify-between">
+      <div
+        className="px-5 flex items-center justify-between shrink-0"
+        style={{ paddingTop: 16, paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
+      >
         <div className="w-12" />
         <button
           onClick={shoot}
@@ -201,7 +364,10 @@ function GuestCamera() {
           <RotateCw className="h-5 w-5" />
         </button>
       </div>
-      <p className="text-center text-white/40 text-xs pb-4 px-6">
+      <p
+        className="text-center text-white/40 text-xs px-6 shrink-0"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)" }}
+      >
         <Camera className="inline h-3 w-3 mr-1" /> You can't preview your shots. Make it count.
       </p>
     </main>
