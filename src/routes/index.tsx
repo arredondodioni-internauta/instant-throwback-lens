@@ -31,7 +31,7 @@ function Landing() {
         </h1>
         <p className="mt-6 text-lg text-muted-foreground max-w-xl mx-auto">
           Set a shot limit per guest. They can't see what they took. You collect every photo
-          when the night ends — every angle of your event, unfiltered.
+          when the night ends, every angle of your event, unfiltered.
         </p>
         <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center">
           <Button asChild size="lg" className="h-12 px-6 text-base">
