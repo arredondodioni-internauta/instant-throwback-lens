@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { getGuestStatus, takePhoto } from "@/lib/events.functions";
-import { Camera, RotateCw } from "lucide-react";
+import { RotateCw } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/guest/$eventId")({
@@ -326,16 +326,16 @@ function GuestCamera() {
     >
       {/* Top bar */}
       <div
-        className="px-5 flex items-center justify-between text-sm shrink-0"
-        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)", paddingBottom: 12 }}
+        className="px-5 flex items-center justify-between shrink-0"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 10px)", paddingBottom: 10 }}
       >
         <div>
-          <div className="text-white/60 text-xs uppercase tracking-wider">{status.eventName}</div>
-          <div className="font-serif">{status.displayName}</div>
+          <div className="font-serif text-base leading-tight">{status.eventName}</div>
+          <div className="text-xs text-primary uppercase tracking-wider">{status.displayName}</div>
         </div>
-        <div className="font-mono text-2xl tabular-nums">
-          <span className="text-primary">{remaining}</span>
-          <span className="text-white/40">/{status.shotsPerGuest}</span>
+        <div className="flex flex-col items-end gap-0.5">
+          <div className="text-xs font-mono bg-primary/20 text-primary px-2 py-0.5 rounded">ISO 400</div>
+          <div className="text-xs text-white/40 font-mono">f/2.8 · 1/60</div>
         </div>
       </div>
 
@@ -358,37 +358,65 @@ function GuestCamera() {
             className="absolute inset-0 w-full h-full object-cover"
           />
         )}
+
         {/* Flash overlay */}
         <div
           className={`absolute inset-0 bg-white pointer-events-none transition-opacity duration-100 ${
             flashing ? "opacity-90" : "opacity-0"
           }`}
         />
-        {/* Viewfinder frame */}
-        <div className="absolute inset-4 border border-white/20 rounded-sm pointer-events-none" />
-        {/* Zoom indicator + slider */}
+
+        {/* Corner brackets */}
+        <div className="absolute top-3 left-3 w-6 h-6 border-t-2 border-l-2 border-white/50 pointer-events-none" />
+        <div className="absolute top-3 right-3 w-6 h-6 border-t-2 border-r-2 border-white/50 pointer-events-none" />
+        <div className="absolute bottom-3 left-3 w-6 h-6 border-b-2 border-l-2 border-white/50 pointer-events-none" />
+        <div className="absolute bottom-3 right-3 w-6 h-6 border-b-2 border-r-2 border-white/50 pointer-events-none" />
+
+        {/* Vertical zoom slider */}
         {zoomCaps && (
-          <div className="absolute left-1/2 -translate-x-1/2 bottom-4 flex flex-col items-center gap-2 w-[70%] max-w-xs">
-            <div className="text-xs font-mono bg-black/50 backdrop-blur px-2 py-0.5 rounded-full">
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 pointer-events-auto">
+            <span className="text-xs font-mono text-white/60 bg-black/50 px-1.5 py-0.5 rounded-full">
               {zoom.toFixed(1)}x
+            </span>
+            <div className="relative" style={{ height: 100, width: 20 }}>
+              <input
+                type="range"
+                min={zoomCaps.min}
+                max={zoomCaps.max}
+                step={zoomCaps.step}
+                value={zoom}
+                onChange={(e) => setZoom(parseFloat(e.target.value))}
+                className="accent-primary absolute"
+                style={{
+                  width: 100,
+                  left: "50%",
+                  top: "50%",
+                  transform: "translate(-50%, -50%) rotate(-90deg)",
+                }}
+              />
             </div>
-            <input
-              type="range"
-              min={zoomCaps.min}
-              max={zoomCaps.max}
-              step={zoomCaps.step}
-              value={zoom}
-              onChange={(e) => setZoom(parseFloat(e.target.value))}
-              className="w-full accent-primary"
-            />
           </div>
         )}
+
+        {/* Bottom overlay: film strip + shot counter */}
+        <div className="absolute bottom-0 inset-x-0 flex flex-col items-center gap-2 pt-10 pb-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none">
+          <FilmDots taken={status.shotsTaken} total={status.shotsPerGuest} />
+          <div className="text-center leading-none">
+            <span className="font-mono text-4xl font-bold tabular-nums">
+              {String(remaining).padStart(2, "0")}
+            </span>
+            <span className="font-mono text-base text-white/50">
+              {" "}/ {String(status.shotsPerGuest).padStart(2, "0")}
+            </span>
+            <div className="text-xs uppercase tracking-[0.2em] text-white/50 mt-1">shots left</div>
+          </div>
+        </div>
       </div>
 
       {/* Bottom controls */}
       <div
-        className="px-5 flex items-center justify-between shrink-0"
-        style={{ paddingTop: 16, paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
+        className="px-8 flex items-center justify-between shrink-0"
+        style={{ paddingTop: 12, paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
       >
         <div className="w-12" />
         <button
@@ -407,13 +435,23 @@ function GuestCamera() {
           <RotateCw className="h-5 w-5" />
         </button>
       </div>
-      <p
-        className="text-center text-white/40 text-xs px-6 shrink-0"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)" }}
-      >
-        <Camera className="inline h-3 w-3 mr-1" /> You can't preview your shots. Make it count.
-      </p>
     </main>
+  );
+}
+
+function FilmDots({ taken, total }: { taken: number; total: number }) {
+  const maxDots = Math.min(total, 20);
+  const remaining = total - taken;
+  const remainingDots = total > 0 ? Math.round((remaining / total) * maxDots) : 0;
+  return (
+    <div className="flex flex-wrap justify-center gap-1">
+      {Array.from({ length: maxDots }).map((_, i) => (
+        <div
+          key={i}
+          className={`h-3 w-4 rounded-sm ${i < remainingDots ? "bg-primary/80" : "bg-white/15"}`}
+        />
+      ))}
+    </div>
   );
 }
 
