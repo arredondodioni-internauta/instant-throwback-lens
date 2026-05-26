@@ -60,6 +60,9 @@ function Landing() {
           </div>
         ))}
       </section>
+      <footer className="text-center text-xs text-muted-foreground pb-6">
+        v1.0.1
+      </footer>
     </main>
   );
 }

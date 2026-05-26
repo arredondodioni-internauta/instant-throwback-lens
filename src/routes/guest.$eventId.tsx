@@ -321,7 +321,7 @@ function GuestCamera() {
 
   return (
     <main
-      className="fixed inset-0 bg-black text-white flex flex-col overflow-hidden select-none"
+      className="fixed inset-0 h-dvh bg-black text-white flex flex-col overflow-hidden select-none"
       style={{ touchAction: "none" }}
     >
       {/* Top bar */}
@@ -342,7 +342,7 @@ function GuestCamera() {
       {/* Viewfinder */}
       <div
         ref={viewfinderRef}
-        className="relative flex-1 overflow-hidden bg-black"
+        className="relative flex-1 min-h-0 overflow-hidden bg-black"
         style={{ touchAction: "none" }}
       >
         {cameraError ? (
