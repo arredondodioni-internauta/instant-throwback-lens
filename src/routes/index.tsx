@@ -15,9 +15,9 @@ function Landing() {
           <Film className="h-5 w-5 text-primary" />
           <span>Reel</span>
         </div>
-        <Link to="/login" className="text-sm text-muted-foreground hover:text-foreground">
-          Host sign in
-        </Link>
+        <Button asChild variant="outline" size="sm" className="h-8 px-4">
+          <Link to="/login">Host sign in</Link>
+        </Button>
       </header>
 
       <section className="max-w-3xl mx-auto px-6 pt-16 pb-12 text-center">
