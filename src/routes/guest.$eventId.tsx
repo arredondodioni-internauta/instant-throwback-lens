@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getGuestStatus, takePhoto } from "@/lib/events.functions";
 import { RotateCw } from "lucide-react";
 import { toast } from "sonner";
@@ -33,6 +33,47 @@ function GuestCamera() {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number; step: number } | null>(null);
   const [zoom, setZoom] = useState(1);
+
+  // Image adjustments (always-visible bottom sliders). All in [-100, 100], 0 = neutral.
+  type Adjustments = { brightness: number; contrast: number; saturation: number; warmth: number };
+  const ADJ_STORAGE_KEY = `reel:adjustments:${eventId}`;
+  const [adj, setAdj] = useState<Adjustments>({
+    brightness: 0,
+    contrast: 0,
+    saturation: 0,
+    warmth: 0,
+  });
+  // Load persisted adjustments
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(ADJ_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          setAdj({
+            brightness: clampAdj(parsed.brightness),
+            contrast: clampAdj(parsed.contrast),
+            saturation: clampAdj(parsed.saturation),
+            warmth: clampAdj(parsed.warmth),
+          });
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [ADJ_STORAGE_KEY]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(ADJ_STORAGE_KEY, JSON.stringify(adj));
+    } catch {
+      // ignore
+    }
+  }, [adj, ADJ_STORAGE_KEY]);
+
+  const filterString = useMemo(() => buildFilterString(adj), [adj]);
+  const filterIsNeutral =
+    adj.brightness === 0 && adj.contrast === 0 && adj.saturation === 0 && adj.warmth === 0;
+
   // Live refs so the touch handlers always read the current zoom/caps without
   // re-binding listeners (which was causing stale-closure jumps mid-pinch).
   const zoomRef = useRef(1);
@@ -277,12 +318,28 @@ function GuestCamera() {
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext("2d")!;
+      if (!filterIsNeutral) {
+        (ctx as any).filter = filterString;
+      }
       ctx.drawImage(video, 0, 0, w, h);
       blob = await new Promise<Blob>((resolve) =>
         canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.95),
       );
+    } else if (!filterIsNeutral) {
+      // Re-render the captured photo through a canvas with the same CSS filter
+      // so the saved image matches what the user saw in the viewfinder.
+      try {
+        blob = await applyFilterToBlob(blob, filterString);
+      } catch {
+        // If filtering fails for any reason, keep the original blob.
+      }
     }
 
+    if (!blob) {
+      setBusy(false);
+      toast.error("Could not capture photo");
+      return;
+    }
     const token = localStorage.getItem(`reel:event:${eventId}`)!;
     const fd = new FormData();
     fd.append("deviceToken", token);
@@ -367,6 +424,7 @@ function GuestCamera() {
             playsInline
             muted
             className="absolute inset-0 w-full h-full object-cover"
+            style={{ filter: filterString }}
           />
         )}
 
@@ -422,6 +480,34 @@ function GuestCamera() {
             <div className="text-xs uppercase tracking-[0.2em] text-white/50 mt-1">shots left</div>
           </div>
         </div>
+      </div>
+
+      {/* Always-visible image adjustment sliders */}
+      <div className="px-5 pt-3 pb-1 shrink-0 bg-black/60 backdrop-blur-sm border-t border-white/10 space-y-1.5">
+        <AdjustSlider
+          label="Brillo"
+          value={adj.brightness}
+          onChange={(v) => setAdj((a) => ({ ...a, brightness: v }))}
+          onReset={() => setAdj((a) => ({ ...a, brightness: 0 }))}
+        />
+        <AdjustSlider
+          label="Contraste"
+          value={adj.contrast}
+          onChange={(v) => setAdj((a) => ({ ...a, contrast: v }))}
+          onReset={() => setAdj((a) => ({ ...a, contrast: 0 }))}
+        />
+        <AdjustSlider
+          label="Saturación"
+          value={adj.saturation}
+          onChange={(v) => setAdj((a) => ({ ...a, saturation: v }))}
+          onReset={() => setAdj((a) => ({ ...a, saturation: 0 }))}
+        />
+        <AdjustSlider
+          label="Calidez"
+          value={adj.warmth}
+          onChange={(v) => setAdj((a) => ({ ...a, warmth: v }))}
+          onReset={() => setAdj((a) => ({ ...a, warmth: 0 }))}
+        />
       </div>
 
       {/* Bottom controls */}
@@ -484,4 +570,128 @@ function playShutter() {
   } catch {
     // ignore
   }
+}
+
+// ===== Image adjustment helpers =====
+
+function clampAdj(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(-100, Math.min(100, Math.round(n)));
+}
+
+function buildFilterString(a: {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  warmth: number;
+}): string {
+  const b = 1 + a.brightness / 100;
+  const c = 1 + a.contrast / 100;
+  const s = 1 + a.saturation / 100;
+  // Warmth: positive => push toward amber, negative => push toward blue.
+  // sepia() tints toward warm yellow; hue-rotate shifts toward red (positive)
+  // or blue (negative). Magnitude is gentle to keep skin tones natural.
+  const sepia = Math.min(1, Math.abs(a.warmth) / 200); // 0..0.5
+  const hue = a.warmth * 0.25; // degrees, -25..+25
+  return `brightness(${b}) contrast(${c}) saturate(${s}) sepia(${sepia}) hue-rotate(${hue}deg)`;
+}
+
+async function applyFilterToBlob(blob: Blob, filter: string): Promise<Blob> {
+  // Decode the captured photo, redraw through a canvas with the same CSS
+  // filter the user saw in the viewfinder, and re-export as JPEG.
+  let bitmap: ImageBitmap | null = null;
+  try {
+    bitmap = await createImageBitmap(blob);
+  } catch {
+    bitmap = null;
+  }
+  if (bitmap) {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d")!;
+    (ctx as any).filter = filter;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close?.();
+    return await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
+        "image/jpeg",
+        0.95,
+      ),
+    );
+  }
+  // Fallback to HTMLImageElement decode path
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("image decode failed"));
+      i.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d")!;
+    (ctx as any).filter = filter;
+    ctx.drawImage(img, 0, 0);
+    return await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
+        "image/jpeg",
+        0.95,
+      ),
+    );
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function AdjustSlider({
+  label,
+  value,
+  onChange,
+  onReset,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onDoubleClick={onReset}
+        onClick={(e) => {
+          // Single tap on the label also resets if already near zero feels off,
+          // so only double-tap resets. Single click is a no-op.
+          e.preventDefault();
+        }}
+        className="w-20 shrink-0 text-left text-[11px] uppercase tracking-wider text-white/70 font-mono"
+        aria-label={`Restablecer ${label}`}
+      >
+        {label}
+      </button>
+      <div className="relative flex-1 h-6 flex items-center">
+        {/* Center tick */}
+        <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 h-3 w-px bg-white/40" />
+        <input
+          type="range"
+          min={-100}
+          max={100}
+          step={1}
+          value={value}
+          onChange={(e) => onChange(parseInt(e.target.value, 10))}
+          onDoubleClick={onReset}
+          className="w-full accent-primary"
+        />
+      </div>
+      <span className="w-9 shrink-0 text-right text-[11px] font-mono tabular-nums text-white/60">
+        {value > 0 ? `+${value}` : value}
+      </span>
+    </div>
+  );
 }
