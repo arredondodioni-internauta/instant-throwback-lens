@@ -1,28 +1,10 @@
 ## Goal
+Alargar la barra vertical de zoom en la pantalla de cámara para que sea más fácil ajustar el zoom con precisión.
 
-Maximize photo resolution on iPhone (Safari) in `src/routes/guest.$eventId.tsx`. Most of the requested fixes are already partly in place — this plan closes the remaining gaps without changing capture/upload behavior elsewhere.
+## Problem
+La barra de zoom actual tiene un contenedor de solo 100 px de alto, por lo que un pequeño movimiento cambia mucho el nivel de zoom.
 
-## Current state
+## Change
+In `src/routes/guest.$eventId.tsx`, increase the zoom slider container height from `100` to `220` px and increase the input width from `100` to `220` px so the slider track is more than twice as long, giving finer control.
 
-- `getUserMedia` requests `width/height ideal 4096x2160` but no `aspectRatio` and no fallback if constraints are rejected.
-- `<video>` already has `autoPlay playsInline muted`.
-- Capture path: tries `ImageCapture.takePhoto()` first (good), then falls back to drawing from `video.videoWidth/videoHeight` — which on iOS Safari often reflects the downscaled preview size, not the track's true resolution.
-- Upload sends the blob as-is (no resizing/recompression). Good.
-
-## Changes (single file: `src/routes/guest.$eventId.tsx`)
-
-1. **getUserMedia constraints + fallback**
-   - Add `aspectRatio: { ideal: 16/9 }` to the ideal request.
-   - Wrap the call in try/catch: on failure, retry with a minimal constraint set (`{ video: { facingMode: { ideal: facing } }, audio: false }`) so the camera still starts on devices that reject the high-res ideals.
-
-2. **Full-resolution canvas capture**
-   - In the non-ImageCapture branch of `shoot()`, read `track.getSettings()` and use its `width`/`height` as the canvas size when available, falling back to `video.videoWidth/videoHeight` only if settings are missing.
-   - Keep `canvas.toBlob(..., "image/jpeg", 0.95)` and the existing upload path unchanged.
-
-3. **No other changes** — video element attributes, ImageCapture preference, zoom logic, and the upload flow remain as-is.
-
-## Technical notes
-
-- `track.getSettings()` reflects the negotiated track resolution; on iOS this is typically higher than the rendered `<video>` element's `videoWidth` when the element is sized by CSS.
-- The fallback `getUserMedia` call only fires if the first one throws (`OverconstrainedError` etc.), preserving the high-res path on capable devices.
-- No backend, storage, or schema changes.
+No other behavior changes.
