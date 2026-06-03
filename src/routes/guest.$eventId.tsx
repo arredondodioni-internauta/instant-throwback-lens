@@ -122,14 +122,24 @@ function GuestCamera() {
           streamRef.current.getTracks().forEach((t) => t.stop());
         }
         // Request the highest resolution the device can offer (no square cap).
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: facing },
-            width: { ideal: 4096 },
-            height: { ideal: 2160 },
-          },
-          audio: false,
-        });
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: facing },
+              width: { ideal: 4096 },
+              height: { ideal: 2160 },
+              aspectRatio: { ideal: 16 / 9 },
+            },
+            audio: false,
+          });
+        } catch {
+          // Fallback if the device rejects the ideal constraints.
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: facing } },
+            audio: false,
+          });
+        }
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
@@ -260,8 +270,9 @@ function GuestCamera() {
     }
     if (!blob) {
       const video = videoRef.current;
-      const w = video.videoWidth;
-      const h = video.videoHeight;
+      const settings = track?.getSettings?.();
+      const w = settings?.width ?? video.videoWidth;
+      const h = settings?.height ?? video.videoHeight;
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
