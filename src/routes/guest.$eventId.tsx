@@ -389,7 +389,7 @@ function GuestCamera() {
             <span className="text-xs font-mono text-white/60 bg-black/50 px-1.5 py-0.5 rounded-full">
               {zoom.toFixed(1)}x
             </span>
-            <div className="relative" style={{ height: 100, width: 20 }}>
+            <div className="relative" style={{ height: 220, width: 20 }}>
               <input
                 type="range"
                 min={zoomCaps.min}
@@ -399,7 +399,7 @@ function GuestCamera() {
                 onChange={(e) => setZoom(parseFloat(e.target.value))}
                 className="accent-primary absolute"
                 style={{
-                  width: 100,
+                  width: 220,
                   left: "50%",
                   top: "50%",
                   transform: "translate(-50%, -50%) rotate(-90deg)",
