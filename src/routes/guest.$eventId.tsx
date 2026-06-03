@@ -571,3 +571,127 @@ function playShutter() {
     // ignore
   }
 }
+
+// ===== Image adjustment helpers =====
+
+function clampAdj(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(-100, Math.min(100, Math.round(n)));
+}
+
+function buildFilterString(a: {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  warmth: number;
+}): string {
+  const b = 1 + a.brightness / 100;
+  const c = 1 + a.contrast / 100;
+  const s = 1 + a.saturation / 100;
+  // Warmth: positive => push toward amber, negative => push toward blue.
+  // sepia() tints toward warm yellow; hue-rotate shifts toward red (positive)
+  // or blue (negative). Magnitude is gentle to keep skin tones natural.
+  const sepia = Math.min(1, Math.abs(a.warmth) / 200); // 0..0.5
+  const hue = a.warmth * 0.25; // degrees, -25..+25
+  return `brightness(${b}) contrast(${c}) saturate(${s}) sepia(${sepia}) hue-rotate(${hue}deg)`;
+}
+
+async function applyFilterToBlob(blob: Blob, filter: string): Promise<Blob> {
+  // Decode the captured photo, redraw through a canvas with the same CSS
+  // filter the user saw in the viewfinder, and re-export as JPEG.
+  let bitmap: ImageBitmap | null = null;
+  try {
+    bitmap = await createImageBitmap(blob);
+  } catch {
+    bitmap = null;
+  }
+  if (bitmap) {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d")!;
+    (ctx as any).filter = filter;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close?.();
+    return await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
+        "image/jpeg",
+        0.95,
+      ),
+    );
+  }
+  // Fallback to HTMLImageElement decode path
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("image decode failed"));
+      i.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d")!;
+    (ctx as any).filter = filter;
+    ctx.drawImage(img, 0, 0);
+    return await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
+        "image/jpeg",
+        0.95,
+      ),
+    );
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function AdjustSlider({
+  label,
+  value,
+  onChange,
+  onReset,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onDoubleClick={onReset}
+        onClick={(e) => {
+          // Single tap on the label also resets if already near zero feels off,
+          // so only double-tap resets. Single click is a no-op.
+          e.preventDefault();
+        }}
+        className="w-20 shrink-0 text-left text-[11px] uppercase tracking-wider text-white/70 font-mono"
+        aria-label={`Restablecer ${label}`}
+      >
+        {label}
+      </button>
+      <div className="relative flex-1 h-6 flex items-center">
+        {/* Center tick */}
+        <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 h-3 w-px bg-white/40" />
+        <input
+          type="range"
+          min={-100}
+          max={100}
+          step={1}
+          value={value}
+          onChange={(e) => onChange(parseInt(e.target.value, 10))}
+          onDoubleClick={onReset}
+          className="w-full accent-primary"
+        />
+      </div>
+      <span className="w-9 shrink-0 text-right text-[11px] font-mono tabular-nums text-white/60">
+        {value > 0 ? `+${value}` : value}
+      </span>
+    </div>
+  );
+}
