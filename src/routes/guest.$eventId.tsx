@@ -335,6 +335,11 @@ function GuestCamera() {
       }
     }
 
+    if (!blob) {
+      setBusy(false);
+      toast.error("Could not capture photo");
+      return;
+    }
     const token = localStorage.getItem(`reel:event:${eventId}`)!;
     const fd = new FormData();
     fd.append("deviceToken", token);
