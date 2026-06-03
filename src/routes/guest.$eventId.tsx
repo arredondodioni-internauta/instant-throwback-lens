@@ -385,11 +385,11 @@ function GuestCamera() {
 
         {/* Vertical zoom slider */}
         {zoomCaps && (
-          <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 pointer-events-auto">
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 pointer-events-auto z-30 py-2 px-1">
             <span className="text-xs font-mono text-white/60 bg-black/50 px-1.5 py-0.5 rounded-full">
               {zoom.toFixed(1)}x
             </span>
-            <div className="relative" style={{ height: 220, width: 20 }}>
+            <div className="relative" style={{ height: 260, width: 20 }}>
               <input
                 type="range"
                 min={zoomCaps.min}
@@ -399,7 +399,7 @@ function GuestCamera() {
                 onChange={(e) => setZoom(parseFloat(e.target.value))}
                 className="accent-primary absolute"
                 style={{
-                  width: 220,
+                  width: 260,
                   left: "50%",
                   top: "50%",
                   transform: "translate(-50%, -50%) rotate(-90deg)",
