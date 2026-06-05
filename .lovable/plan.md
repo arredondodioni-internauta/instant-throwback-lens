@@ -1,65 +1,49 @@
-## Objetivo
-Que el invitado pueda ajustar de forma intuitiva **brillo, contraste, saturación y calidez** mientras encuadra la foto. Los 4 sliders están **siempre visibles** en la parte inferior desde que se abre la cámara — sin presets, sin botón "Ajustes", sin paneles que abrir.
+## Cambios en `src/routes/guest.$eventId.tsx`
 
-## Cómo se verá
+### 1. Quitar los filtros de la cámara (mantener zoom)
+- Eliminar del JSX el bloque "Always-visible image adjustment sliders" (los 4 sliders `Brillo/Contraste/Saturación/Calidez`).
+- Quitar `style={{ filter: filterString }}` del `<video>`.
+- Quitar el postproceso del blob: la rama `else if (!filterIsNeutral) applyFilterToBlob(...)` y la línea `if (!filterIsNeutral) ctx.filter = filterString` en el canvas de fallback.
+- Eliminar del componente: tipo `Adjustments`, estado `adj`, `ADJ_STORAGE_KEY`, ambos `useEffect` de carga/persistencia en `localStorage`, `filterString`, `filterIsNeutral`.
+- Eliminar las funciones auxiliares no usadas en el cuerpo del archivo: `clampAdj`, `buildFilterString`, `applyFilterToBlob`, y el componente `AdjustSlider`.
+- El zoom (slider vertical lateral + pinch + capacidades del track) queda **intacto**.
 
-En la cámara, justo debajo del visor y encima del botón de disparo, una fila fija con **4 sliders horizontales compactos** etiquetados en español:
+### 2. Preservar el código eliminado en un archivo aparte
+Crear `src/lib/camera-filters.unused.ts` que **no se importa en ningún sitio** y contiene:
+- El tipo `Adjustments`.
+- `clampAdj`, `buildFilterString`, `applyFilterToBlob`.
+- El componente `AdjustSlider`.
+- Un comentario superior explicando que es código preservado para reintroducir los 4 sliders en el futuro (y que cuando se conecte GitHub se puede mover a una rama).
 
-- **Brillo** (−100 … +100, centro 0)
-- **Contraste** (−100 … +100, centro 0)
-- **Saturación** (−100 … +100, centro 0)
-- **Calidez** (−100 … +100, frío ↔ cálido)
+### 3. Maximizar la imagen y superponer el botón de disparo
+Reestructurar el layout del `<main>` para que el visor (video) ocupe toda la pantalla y los controles floten encima:
 
-Cada slider:
-- Es delgado, ocupa todo el ancho disponible.
-- Tiene una etiqueta corta a la izquierda (ej. "Brillo").
-- Tiene una marca central visible (el "0" neutro) para que sea evidente dónde está el ajuste por defecto.
-- Doble-tap en la etiqueta → resetea ese parámetro a 0.
+- `<main>` mantiene `fixed inset-0 h-dvh` pero deja de ser `flex flex-col`. Pasa a ser `relative`.
+- El **viewfinder** pasa a ser `absolute inset-0` (ocupa toda la pantalla, no sólo el espacio entre top-bar y controles). El `<video>` sigue con `object-cover`.
+- La **top bar** (nombre evento + ISO/f/exposición) se convierte en overlay `absolute top-0 inset-x-0 z-20` con un suave gradiente oscuro de fondo para legibilidad. Mantiene el padding seguro de `env(safe-area-inset-top)`.
+- El **slider vertical de zoom** ya es `absolute` dentro del viewfinder; queda igual (lateral derecho centrado).
+- El bloque inferior **"film strip + shot counter"** queda donde está (overlay inferior con gradiente), pero se sube ligeramente para hacer hueco al botón.
+- Los **controles inferiores** (botón de disparo + flip camera) pasan a ser overlay `absolute bottom-0 inset-x-0 z-20`, con el mismo padding seguro `env(safe-area-inset-bottom)`. El botón de disparo queda **superpuesto sobre la imagen**, no en una franja separada debajo.
+- El film strip / contador se reubica encima del botón (por ejemplo, `bottom` mayor) para que no se solape con el shutter.
+
+### Resultado visual
 
 ```text
 ┌──────────────────────────────┐
-│        VISOR (vídeo)         │
-│       (con filtro vivo)      │
+│ EventName        ISO 400     │ ← overlay top
+│ NAME             f/2.8 1/60  │
 │                              │
-│   ●●●●○○○○  03 / 10          │
-├──────────────────────────────┤
-│ Brillo      ──────●──────    │
-│ Contraste   ──────●──────    │
-│ Saturación  ──────●──────    │
-│ Calidez     ──────●──────    │
-├──────────────────────────────┤
-│          ◯ disparo    ↻      │
+│                              │
+│        VISOR (full)       │1.0x│ ← zoom lateral
+│        sin filtro         │ ▲ │
+│                           │ ║ │
+│                           │ ▼ │
+│        ●●●○○○○ 03/10         │ ← contador
+│              ◯               │ ← shutter superpuesto
+│                         ↻    │ ← flip
 └──────────────────────────────┘
 ```
 
-El visor se reduce un poco verticalmente para dejar sitio fijo a los 4 sliders. Nada que abrir, nada que descubrir.
-
-## Cómo funciona técnicamente
-
-1. **Vista previa en vivo (CSS filter sobre el `<video>`)**
-   - brillo → `brightness(1 + v/100)`
-   - contraste → `contrast(1 + v/100)`
-   - saturación → `saturate(1 + v/100)`
-   - calidez → combinación de `sepia()` + `hue-rotate()` para empujar hacia ámbar (positivo) o azul (negativo). Es la aproximación CSS estándar a temperatura de color.
-   El string se recalcula con `useMemo` cada vez que cambia un slider.
-
-2. **Misma transformación aplicada a la foto final**
-   En `shoot()`, tras obtener el blob a máxima resolución (vía `ImageCapture` o canvas):
-   - Cargo el blob en un `ImageBitmap`.
-   - Lo dibujo en un canvas del mismo tamaño con `ctx.filter = <mismo string>` antes del `drawImage`.
-   - Reexporto con `canvas.toBlob('image/jpeg', 0.95)`.
-   - Si los 4 ajustes están en 0 → me salto este paso para no perder calidad.
-
-3. **Estado y persistencia**
-   - `adjustments = { brightness, contrast, saturation, warmth }` en estado.
-   - Se persiste en `localStorage` (`reel:adjustments:${eventId}`) para que entre fotos no haya que reajustar.
-
-4. **No toco** la lógica de cámara, zoom, captura base, autenticación ni el upload — sólo añado el filtro visual y el postproceso del blob cuando hay ajustes activos.
-
-## Archivos a modificar
-- `src/routes/guest.$eventId.tsx` — única edición: añadir estado de ajustes, fila de 4 sliders siempre visibles, aplicar filtro CSS al `<video>`, y postprocesar el blob en `shoot()`.
-
 ## Fuera de alcance
-- Presets / filtros prefabricados.
-- LUTs o filtros con WebGL.
-- Edición posterior de fotos ya tomadas.
+- No se toca lógica de cámara, captura, zoom, auth, subida ni el flujo de `/join`.
+- No se conecta GitHub (se hará más adelante, moviendo `camera-filters.unused.ts` a una rama).
