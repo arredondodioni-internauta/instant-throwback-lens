@@ -14,7 +14,7 @@ const searchSchema = z.object({ code: z.string().optional() });
 export const Route = createFileRoute("/join")({
   component: JoinPage,
   validateSearch: searchSchema,
-  head: () => ({ meta: [{ title: "Join an event — Reel" }] }),
+  head: () => ({ meta: [{ title: "Únete al evento — mosaic" }] }),
 });
 
 const STEPS = [
@@ -34,11 +34,6 @@ const STEPS = [
     d: "Tus fotos van directo al anfitrión. Cuando acabe el evento, se revelan todas de golpe.",
   },
 ];
-
-// placeholder for original closing — replaced below
-const __NOOP__ = (() => {
-  return null;
-});
 
 function JoinPage() {
   const nav = useNavigate();
@@ -76,19 +71,22 @@ function JoinPage() {
     <main className="min-h-screen flex items-center justify-center px-6 bg-background">
       <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4">
         <div className="text-center mb-6">
-          <h1 className="font-serif text-3xl leading-tight">
-            <span className="block">Welcome to</span>
-            <span className="block text-primary">
-              {eventInfo?.name ?? "the event"}
-            </span>
+          <h1 className="font-serif text-4xl leading-tight text-primary">
+            {eventInfo?.name ?? "el evento"}
           </h1>
-          <p className="text-base text-muted-foreground mt-3">
-            Enter your name to start capturing moments
-          </p>
+        </div>
+        <div className="space-y-3 mb-6">
+          {STEPS.map((s) => (
+            <div key={s.n} className="border border-border bg-card p-4 rounded-md">
+              <div className="font-mono text-xs text-primary mb-1">{s.n}</div>
+              <div className="font-serif text-base leading-snug mb-1">{s.t}</div>
+              <div className="text-sm text-muted-foreground">{s.d}</div>
+            </div>
+          ))}
         </div>
         {!codeFromUrl && (
           <div className="space-y-2">
-            <Label htmlFor="code">Event code</Label>
+            <Label htmlFor="code">Código del evento</Label>
             <Input
               id="code"
               required
@@ -106,12 +104,12 @@ function JoinPage() {
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Your name"
+            placeholder="¿Cómo te llamas?"
             className="h-14 text-lg placeholder:text-muted-foreground"
           />
         </div>
         <Button type="submit" disabled={busy} className="w-full h-12 text-base">
-          {busy ? "Joining..." : "Pick up the camera"}
+          {busy ? "Abriendo..." : "Abrir mi cámara"}
         </Button>
       </form>
     </main>
