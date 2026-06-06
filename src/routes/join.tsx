@@ -61,7 +61,7 @@ function JoinPage() {
       localStorage.setItem(`reel:event:${res.eventId}`, res.deviceToken);
       nav({ to: "/guest/$eventId", params: { eventId: res.eventId } });
     } catch (err: any) {
-      toast.error(err?.message ?? "Could not join");
+      toast.error(err?.message ?? "No se pudo unir");
     } finally {
       setBusy(false);
     }
