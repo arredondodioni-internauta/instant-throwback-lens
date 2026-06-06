@@ -2,7 +2,8 @@ import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router"
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { z } from "zod";
-import { joinEvent } from "@/lib/events.functions";
+import { joinEvent, getEventByCode } from "@/lib/events.functions";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +24,16 @@ function JoinPage() {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const join = useServerFn(joinEvent);
+  const lookup = useServerFn(getEventByCode);
+
+  const trimmedCode = code.trim().toUpperCase();
+  const { data: eventInfo } = useQuery({
+    queryKey: ["event-by-code", trimmedCode],
+    queryFn: () => lookup({ data: { code: trimmedCode } }),
+    enabled: trimmedCode.length >= 4,
+    retry: false,
+    staleTime: 60_000,
+  });
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,24 +53,36 @@ function JoinPage() {
     <main className="min-h-screen flex items-center justify-center px-6 bg-background">
       <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4">
         <div className="text-center mb-6">
-          <h1 className="font-serif text-3xl">Join the event</h1>
-          <p className="text-sm text-muted-foreground mt-1">Enter the host's code and your name.</p>
+          <h1 className="font-serif text-3xl">
+            Welcome to {eventInfo?.name ?? "the event"}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-2">
+            Enter your name to start capturing moments
+          </p>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="code">Event code</Label>
-          <Input
-            id="code"
-            required
-            value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="ABC123"
-            className="text-center font-mono tracking-[0.4em] text-lg uppercase"
-            maxLength={8}
-          />
-        </div>
+        {!codeFromUrl && (
+          <div className="space-y-2">
+            <Label htmlFor="code">Event code</Label>
+            <Input
+              id="code"
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="ABC123"
+              className="text-center font-mono tracking-[0.4em] text-lg uppercase"
+              maxLength={8}
+            />
+          </div>
+        )}
         <div className="space-y-2">
           <Label htmlFor="name">Your name</Label>
-          <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Alex" />
+          <Input
+            id="name"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="h-14 text-lg"
+          />
         </div>
         <Button type="submit" disabled={busy} className="w-full h-12 text-base">
           {busy ? "Joining..." : "Pick up the camera"}

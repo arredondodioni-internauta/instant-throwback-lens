@@ -140,6 +140,21 @@ export const getEventPhotosForDownload = createServerFn({ method: "POST" })
 
 // ---------- GUEST ----------
 
+export const getEventByCode = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({ code: z.string().min(4).max(12) }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const code = data.code.toUpperCase().trim();
+    const { data: ev } = await supabaseAdmin
+      .from("events")
+      .select("id, name, status")
+      .eq("code", code)
+      .single();
+    if (!ev) throw new Error("Event not found. Check the code.");
+    return { id: ev.id, name: ev.name, status: ev.status as "active" | "ended" };
+  });
+
 export const joinEvent = createServerFn({ method: "POST" })
   .inputValidator((input) =>
     z
