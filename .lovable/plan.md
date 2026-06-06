@@ -1,49 +1,57 @@
-## Cambios en `src/routes/guest.$eventId.tsx`
+## What the data actually shows
 
-### 1. Quitar los filtros de la cámara (mantener zoom)
-- Eliminar del JSX el bloque "Always-visible image adjustment sliders" (los 4 sliders `Brillo/Contraste/Saturación/Calidez`).
-- Quitar `style={{ filter: filterString }}` del `<video>`.
-- Quitar el postproceso del blob: la rama `else if (!filterIsNeutral) applyFilterToBlob(...)` y la línea `if (!filterIsNeutral) ctx.filter = filterString` en el canvas de fallback.
-- Eliminar del componente: tipo `Adjustments`, estado `adj`, `ADJ_STORAGE_KEY`, ambos `useEffect` de carga/persistencia en `localStorage`, `filterString`, `filterIsNeutral`.
-- Eliminar las funciones auxiliares no usadas en el cuerpo del archivo: `clampAdj`, `buildFilterString`, `applyFilterToBlob`, y el componente `AdjustSlider`.
-- El zoom (slider vertical lateral + pinch + capacidades del track) queda **intacto**.
+I checked the DB for event `ML32AE` (BBQ, still `active`):
 
-### 2. Preservar el código eliminado en un archivo aparte
-Crear `src/lib/camera-filters.unused.ts` que **no se importa en ningún sitio** y contiene:
-- El tipo `Adjustments`.
-- `clampAdj`, `buildFilterString`, `applyFilterToBlob`.
-- El componente `AdjustSlider`.
-- Un comentario superior explicando que es código preservado para reintroducir los 4 sliders en el futuro (y que cuando se conecte GitHub se puede mover a una rama).
+- **10 guests joined successfully** between Jun 3 16:49 and Jun 4 07:18.
+- **0 photos** were ever taken by any of them.
+- **Duplicate names**: Joan×2, Josn×2, Alex×2 — strong signal that those users hit an error and retried `/join` with the same name.
 
-### 3. Maximizar la imagen y superponer el botón de disparo
-Reestructurar el layout del `<main>` para que el visor (video) ocupe toda la pantalla y los controles floten encima:
+Conclusion: the failure was **not** at the `/join` step. The `joinEvent` server fn worked — rows exist. The error users saw appeared **after** join, on the `/guest/$eventId` camera screen, and they bounced back to `/join` thinking the join itself had failed.
 
-- `<main>` mantiene `fixed inset-0 h-dvh` pero deja de ser `flex flex-col`. Pasa a ser `relative`.
-- El **viewfinder** pasa a ser `absolute inset-0` (ocupa toda la pantalla, no sólo el espacio entre top-bar y controles). El `<video>` sigue con `object-cover`.
-- La **top bar** (nombre evento + ISO/f/exposición) se convierte en overlay `absolute top-0 inset-x-0 z-20` con un suave gradiente oscuro de fondo para legibilidad. Mantiene el padding seguro de `env(safe-area-inset-top)`.
-- El **slider vertical de zoom** ya es `absolute` dentro del viewfinder; queda igual (lateral derecho centrado).
-- El bloque inferior **"film strip + shot counter"** queda donde está (overlay inferior con gradiente), pero se sube ligeramente para hacer hueco al botón.
-- Los **controles inferiores** (botón de disparo + flip camera) pasan a ser overlay `absolute bottom-0 inset-x-0 z-20`, con el mismo padding seguro `env(safe-area-inset-bottom)`. El botón de disparo queda **superpuesto sobre la imagen**, no en una franja separada debajo.
-- El film strip / contador se reubica encima del botón (por ejemplo, `bottom` mayor) para que no se solape con el shutter.
+## Most likely causes (ranked)
 
-### Resultado visual
+### 1. Camera permission denied / unavailable → silent bounce to /join
+On `/guest/$eventId`, the page calls `getGuestStatus`. If that throws for **any** reason, the code does:
 
-```text
-┌──────────────────────────────┐
-│ EventName        ISO 400     │ ← overlay top
-│ NAME             f/2.8 1/60  │
-│                              │
-│                              │
-│        VISOR (full)       │1.0x│ ← zoom lateral
-│        sin filtro         │ ▲ │
-│                           │ ║ │
-│                           │ ▼ │
-│        ●●●○○○○ 03/10         │ ← contador
-│              ◯               │ ← shutter superpuesto
-│                         ↻    │ ← flip
-└──────────────────────────────┘
+```ts
+localStorage.removeItem(`reel:event:${eventId}`);
+nav({ to: "/join", search: { code: undefined } });
 ```
 
-## Fuera de alcance
-- No se toca lógica de cámara, captura, zoom, auth, subida ni el flujo de `/join`.
-- No se conecta GitHub (se hará más adelante, moviendo `camera-filters.unused.ts` a una rama).
+No toast, no explanation. The user lands back on `/join` and assumes "I'm not in the group". This matches the duplicate-name pattern perfectly.
+
+Triggers for `getGuestStatus` to throw:
+- WhatsApp / Instagram / TikTok in-app browsers strip or wall off `localStorage` and camera APIs — the device token write succeeds on `/join`, but reading it on the next route can fail, or the serverFn call fails because the in-app browser blocks the auth/cookie surface.
+- iOS Safari Private Mode: `localStorage.setItem` silently fails in some versions.
+- Token race: the user opens the camera route in a different tab/browser than `/join`, so the token isn't there.
+
+### 2. Camera permission flow itself
+Even if `getGuestStatus` succeeds, the camera `getUserMedia` call can fail on:
+- Non-HTTPS context (shouldn't happen on `*.lovable.app`, but worth ruling out for any custom QR URL).
+- In-app browsers that don't expose `mediaDevices`.
+- iOS where the user denied the permission prompt once — subsequent visits silently fail.
+
+The camera error is shown inline (`cameraError` state), not as the bouncing-back-to-/join behavior, so this is a secondary hypothesis.
+
+### 3. The "not part of a group" wording
+That exact phrase isn't in our codebase. It's most likely the user paraphrasing one of:
+- The default `/join` page reappearing ("Enter the host's code") → they read it as "you're not in".
+- A toast from `joinEvent`: `"Event not found. Check the code."` if they retried with a typo (we see `Josn` vs `Joan`, `Alez` vs `Alex`).
+
+## How to confirm
+
+Three quick checks, no code changes:
+
+1. **Pull serverFn logs** for `getGuestStatus` and `takePhoto` around Jun 3 17:00–20:30 and Jun 4 07:15 to see whether `getGuestStatus` was failing or whether users never reached `takePhoto`.
+2. **Test on a real in-app browser**: open the QR via WhatsApp on iOS and Android, complete the join, see if `/guest/$eventId` survives.
+3. **Add a one-line diagnostic toast** before the silent bounce so future failures are visible.
+
+## Recommended fix (small, surgical — only after you approve)
+
+In `src/routes/guest.$eventId.tsx`, change the silent catch into a visible one:
+
+- Show a `toast.error("Couldn't restore your session, please rejoin.")` before navigating back to `/join`.
+- Distinguish "no token in localStorage" (likely in-app browser) from "serverFn failed" (likely network or event ended) with different messages.
+- Optionally: if the in-app browser is detected (`navigator.userAgent` contains `FBAN`, `Instagram`, `Line`, etc.), show a "Open in Safari/Chrome" hint before they even hit the camera step.
+
+This is diagnosis-only for now — say the word and I'll implement the toast + in-app-browser hint.
