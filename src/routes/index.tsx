@@ -36,13 +36,13 @@ const translations = {
     eyebrow: "Cámara desechable, para eventos",
     h1a: "Dale a cada invitado un carrete.",
     h1b: "Sin vista previa.",
-    sub: "Define un límite de fotos por invitado. Una vez hecha, no se puede ver la foto. Cuando acabe el evento, recoges cada ángulo, cada perspectiva, sin filtros.",
+    sub: "Define un límite de fotos por invitado. La foto no se podrá ver una vez tomada. Cuando acabe el evento, tendrás una colección de perspectivas, sin filtros.",
     host: "Organizar un evento",
     join: "Unirse con un código",
     steps: [
       { n: "01", t: "Crea el evento", d: "Define cuántas fotos tiene cada invitado." },
       { n: "02", t: "Comparte el código", d: "Los invitados entran con un código y su nombre." },
-      { n: "03", t: "Revela el rollo", d: "Finaliza el evento y descarga todas las fotos." },
+      { n: "03", t: "Revela el carrete", d: "Finaliza el evento y descarga todas las fotos." },
     ],
   },
 } as const;
