@@ -20,13 +20,13 @@ export const Route = createFileRoute("/join")({
 const STEPS = [
   {
     n: "01",
-    t: "Tienes 5 fotos. Que valgan la pena.",
+    t: "Solo tienes 5 fotos.",
     d: "Nada de repetir, nada de borrar. Como la cámara analógica de tus padres.",
   },
   {
     n: "02",
-    t: "Para un momento antes de disparar.",
-    d: "Las mejores fotos no se hacen con prisa. Respira, encuadra, dispara.",
+    t: "No muevas el móvil al disparar.",
+    d: "Un pequeño temblor arruina la foto.",
   },
   {
     n: "03",
@@ -87,7 +87,7 @@ function JoinPage() {
                 )}
               </div>
               <div className="pb-2 pt-1">
-                <div className="font-serif text-lg leading-snug font-medium text-foreground mb-1.5">
+                <div className="font-serif text-xl leading-snug font-medium text-foreground mb-2">
                   {s.t}
                 </div>
                 <div className="text-base text-muted-foreground leading-relaxed">
