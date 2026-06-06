@@ -53,10 +53,13 @@ function JoinPage() {
     <main className="min-h-screen flex items-center justify-center px-6 bg-background">
       <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4">
         <div className="text-center mb-6">
-          <h1 className="font-serif text-3xl">
-            Welcome to {eventInfo?.name ?? "the event"}
+          <h1 className="font-serif text-3xl leading-tight">
+            <span className="block">Welcome to</span>
+            <span className="block text-primary">
+              {eventInfo?.name ?? "the event"}
+            </span>
           </h1>
-          <p className="text-sm text-muted-foreground mt-2">
+          <p className="text-base text-muted-foreground mt-3">
             Enter your name to start capturing moments
           </p>
         </div>
@@ -74,14 +77,14 @@ function JoinPage() {
             />
           </div>
         )}
-        <div className="space-y-2">
-          <Label htmlFor="name">Your name</Label>
+        <div>
           <Input
             id="name"
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="h-14 text-lg"
+            placeholder="Your name"
+            className="h-14 text-lg placeholder:text-muted-foreground"
           />
         </div>
         <Button type="submit" disabled={busy} className="w-full h-12 text-base">
