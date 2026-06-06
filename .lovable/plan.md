@@ -1,20 +1,26 @@
-## Guest Join Page Refresh
+## Guest Join Page — Spanish + Onboarding Steps
 
-Goal: Improve the guest join experience when they arrive from a QR code scan.
+Edit only `src/routes/join.tsx`. No backend or other route changes.
 
 ### Changes
 
-1. **Add a public lookup server function** in `src/lib/events.functions.ts`
-   - `getEventByCode(code)` — returns `{ id, name, status }` without auth, so the join page can show the event name.
+1. **Header**: Replace the two-line "Welcome to / [event name]" with just the event name (`eventInfo?.name ?? "el evento"`) in the same `font-serif` primary-colored style. Drop the "Welcome to" line entirely.
 
-2. **Update `src/routes/join.tsx`**
-   - On mount (when `code` is present in URL), fetch the event via the new lookup fn to display `Welcome to [event name]`.
-   - Subtitle becomes: `Enter your name to start capturing moments`
-   - Remove the event code `<Input>` and its `<Label>` entirely. Keep the code value internally for the `joinEvent` call.
-   - Remove the `placeholder="Alex"` from the name field so it is blank.
-   - Make the name field visually larger (e.g., `text-lg h-14`).
-   - Keep the `joinEvent` submit logic unchanged — it still uses the code from the URL.
+2. **3-step onboarding block** (new): Between the header and the name input, add a vertical list of 3 steps. Each step shows a number badge (01 / 02 / 03) in mono/primary, a bold title, and a muted subtitle. Styled to match the landing page step cards (border, rounded, subtle).
+   - 01 — "Tienes 5 fotos. Que valgan la pena." / "Nada de repetir, nada de borrar. Como la cámara analógica de tus padres."
+   - 02 — "Para un momento antes de disparar." / "Las mejores fotos no se hacen con prisa. Respira, encuadra, dispara."
+   - 03 — "No verás nada hasta el final." / "Tus fotos van directo al anfitrión. Cuando acabe el evento, se revelan todas de golpe."
 
-### Technical notes
-- No auth required for the lookup; it only exposes public event info (name + status).
-- The page still works when no code is in the URL: falls back to a generic title and shows the code input. (If the user wants to drop manual code entry entirely, let me know — I can redirect or show a "no code" state instead.)
+3. **Name field placeholder**: `"¿Cómo te llamas?"` (replaces `"Your name"`).
+
+4. **Submit button label**: `"Abrir mi cámara"` (busy state: `"Abriendo..."`).
+
+5. **Other Spanish strings on this screen**:
+   - Fallback event name: `"el evento"`
+   - Manual code entry label (only shown when no `?code=` in URL): `"Código del evento"`
+   - Toast error fallback: `"No se pudo unir"`
+   - Route `head` title: `"Únete al evento — mosaic"`
+
+### Notes
+- "5 fotos" in step 01 is hardcoded as written by the user, even though the real shot limit comes from event settings. If you'd rather make it dynamic (`Tienes {shotsPerGuest} fotos…`), say so and I'll wire it through `getEventByCode` (currently it only returns id/name/status).
+- No language toggle on this screen — fully Spanish, since QR-scan guests are the target audience.
