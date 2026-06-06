@@ -75,15 +75,28 @@ function JoinPage() {
             {eventInfo?.name ?? "el evento"}
           </h1>
         </div>
-        <div className="space-y-3 mb-6">
-          {STEPS.map((s) => (
-            <div key={s.n} className="border border-border bg-card p-4 rounded-md">
-              <div className="font-mono text-xs text-primary mb-1">{s.n}</div>
-              <div className="font-serif text-base leading-snug mb-1">{s.t}</div>
-              <div className="text-sm text-muted-foreground">{s.d}</div>
-            </div>
+        <ol className="mb-8 space-y-6">
+          {STEPS.map((s, i) => (
+            <li key={s.n} className="relative flex gap-4">
+              <div className="flex flex-col items-center">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-medium text-sm">
+                  {i + 1}
+                </div>
+                {i < STEPS.length - 1 && (
+                  <div className="mt-2 w-px flex-1 bg-border" />
+                )}
+              </div>
+              <div className="pb-2 pt-1">
+                <div className="font-serif text-lg leading-snug font-medium text-foreground mb-1.5">
+                  {s.t}
+                </div>
+                <div className="text-base text-muted-foreground leading-relaxed">
+                  {s.d}
+                </div>
+              </div>
+            </li>
           ))}
-        </div>
+        </ol>
         {!codeFromUrl && (
           <div className="space-y-2">
             <Label htmlFor="code">Código del evento</Label>
