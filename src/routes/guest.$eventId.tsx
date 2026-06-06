@@ -101,15 +101,40 @@ function GuestCamera() {
 
   // Load guest status from device token
   useEffect(() => {
-    const token = localStorage.getItem(`reel:event:${eventId}`);
+    // Detect in-app browsers (WhatsApp, Instagram, Facebook, TikTok, Line, etc.)
+    // which often block camera access and/or localStorage.
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    const inApp = /FBAN|FBAV|Instagram|Line|TikTok|MicroMessenger|WhatsApp/i.test(ua);
+    if (inApp) {
+      toast.error(
+        "Open this link in Safari or Chrome — in-app browsers block the camera.",
+        { duration: 8000 },
+      );
+    }
+
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(`reel:event:${eventId}`);
+    } catch {
+      toast.error("Your browser is blocking storage. Open the link in Safari or Chrome.");
+      nav({ to: "/join", search: { code: undefined } });
+      return;
+    }
     if (!token) {
+      toast.error("We couldn't find your session on this device. Please join again.");
       nav({ to: "/join", search: { code: undefined } });
       return;
     }
     fnStatus({ data: { deviceToken: token } })
       .then(setStatus)
-      .catch(() => {
-        localStorage.removeItem(`reel:event:${eventId}`);
+      .catch((err: any) => {
+        const msg = err?.message ?? "";
+        if (/Guest not found/i.test(msg)) {
+          toast.error("Your session expired. Please join the event again.");
+          try { localStorage.removeItem(`reel:event:${eventId}`); } catch {}
+        } else {
+          toast.error(`Couldn't restore your session: ${msg || "network error"}`);
+        }
         nav({ to: "/join", search: { code: undefined } });
       });
   }, [eventId, fnStatus, nav]);
