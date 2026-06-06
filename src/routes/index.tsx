@@ -34,9 +34,9 @@ const translations = {
   es: {
     hostSignIn: "Iniciar sesión",
     eyebrow: "Cámara desechable, para eventos",
-    h1a: "Dale a cada invitado un rollo de película.",
+    h1a: "Dale a cada invitado un carrete.",
     h1b: "Sin vista previa.",
-    sub: "Define un límite de fotos por invitado. No pueden ver lo que tomaron. Al final de la noche recoges cada foto, cada ángulo de tu evento, sin filtros.",
+    sub: "Define un límite de fotos por invitado. Una vez hecha, no se puede ver la foto. Cuando acabe el evento, recoges cada ángulo, cada perspectiva, sin filtros.",
     host: "Organizar un evento",
     join: "Unirse con un código",
     steps: [
