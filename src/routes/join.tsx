@@ -17,6 +17,29 @@ export const Route = createFileRoute("/join")({
   head: () => ({ meta: [{ title: "Join an event — Reel" }] }),
 });
 
+const STEPS = [
+  {
+    n: "01",
+    t: "Tienes 5 fotos. Que valgan la pena.",
+    d: "Nada de repetir, nada de borrar. Como la cámara analógica de tus padres.",
+  },
+  {
+    n: "02",
+    t: "Para un momento antes de disparar.",
+    d: "Las mejores fotos no se hacen con prisa. Respira, encuadra, dispara.",
+  },
+  {
+    n: "03",
+    t: "No verás nada hasta el final.",
+    d: "Tus fotos van directo al anfitrión. Cuando acabe el evento, se revelan todas de golpe.",
+  },
+];
+
+// placeholder for original closing — replaced below
+const __NOOP__ = (() => {
+  return null;
+});
+
 function JoinPage() {
   const nav = useNavigate();
   const { code: codeFromUrl } = useSearch({ from: "/join" });
