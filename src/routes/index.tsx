@@ -13,7 +13,7 @@ function Landing() {
       <header className="px-6 py-5 flex items-center justify-between max-w-5xl mx-auto">
         <div className="flex items-center gap-2 font-serif text-xl tracking-tight">
           <Film className="h-5 w-5 text-primary" />
-          <span>Reel</span>
+          <span>mosaic</span>
         </div>
         <Button asChild variant="outline" size="sm" className="h-8 px-4">
           <Link to="/login">Host sign in</Link>
