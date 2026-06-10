@@ -46,8 +46,8 @@ async function importVapidPrivateKey(privateKeyB64Url: string, publicKeyB64Url: 
 }
 
 async function buildVapidAuthHeader(audience: string, subject: string) {
-  const pub = process.env.VAPID_PUBLIC_KEY!;
-  const priv = process.env.VAPID_PRIVATE_KEY!;
+  const pub = process.env.VAPID_PUBLIC_KEY ?? "BE6B7CoRO4rIAMV45Xv3eIhaahNSSd6EzB6vYJWUHKVmC2Tq9T8Li9AQKKkU947-JG-Ny0f1WURHvQiaQs67m_o";
+  const priv = process.env.VAPID_PRIVATE_KEY;
   if (!pub || !priv) throw new Error("VAPID keys not configured");
 
   const key = await importVapidPrivateKey(priv, pub);
