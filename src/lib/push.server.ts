@@ -1,5 +1,4 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { SignJWT, importPKCS8 } from "jose";
 
 // VAPID keys are base64url-encoded EC P-256 keys.
 // Public key: raw uncompressed point (65 bytes) base64url-encoded -> goes to clients.
