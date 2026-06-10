@@ -2,6 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { getGuestStatus, takePhoto } from "@/lib/events.functions";
+import { getEventAlbumStatus } from "@/lib/album.functions";
+import { subscribeToAlbumPush } from "@/lib/push-client";
 import { RotateCw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -15,6 +17,12 @@ function GuestCamera() {
   const nav = useNavigate();
   const fnStatus = useServerFn(getGuestStatus);
   const fnTake = useServerFn(takePhoto);
+  const fnAlbumStatus = useServerFn(getEventAlbumStatus);
+  const [albumInfo, setAlbumInfo] = useState<{
+    published: boolean;
+    code: string | null;
+    name?: string;
+  } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -126,7 +134,11 @@ function GuestCamera() {
       return;
     }
     fnStatus({ data: { deviceToken: token } })
-      .then(setStatus)
+      .then((s) => {
+        setStatus(s);
+        // Fire-and-forget: subscribe this device to push so we can notify when album publishes
+        subscribeToAlbumPush(eventId, s.displayName);
+      })
       .catch((err: any) => {
         const msg = err?.message ?? "";
         if (/Guest not found/i.test(msg)) {
@@ -138,6 +150,24 @@ function GuestCamera() {
         nav({ to: "/join", search: { code: undefined } });
       });
   }, [eventId, fnStatus, nav]);
+
+  // Poll album publish status while the event is ended so we can show a CTA
+  useEffect(() => {
+    if (status?.eventStatus !== "ended") return;
+    let cancelled = false;
+    async function check() {
+      try {
+        const info = await fnAlbumStatus({ data: { eventId } });
+        if (!cancelled) setAlbumInfo(info as any);
+      } catch {}
+    }
+    check();
+    const i = setInterval(check, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(i);
+    };
+  }, [status?.eventStatus, eventId, fnAlbumStatus]);
 
   // Start camera
   useEffect(() => {
@@ -339,10 +369,24 @@ function GuestCamera() {
   if (status.eventStatus === "ended") {
     return (
       <main className="fixed inset-0 flex flex-col items-center justify-center bg-black text-white px-6 text-center">
-        <h1 className="font-serif text-3xl mb-2">The roll is in.</h1>
-        <p className="text-white/70 max-w-sm">
-          {status.eventName} has ended. Your host will share the photos soon.
-        </p>
+        <h1 className="font-serif text-3xl mb-2">El carrete está listo.</h1>
+        {albumInfo?.published && albumInfo.code ? (
+          <>
+            <p className="text-white/70 max-w-sm mb-6">
+              El álbum de {status.eventName} ya está disponible.
+            </p>
+            <a
+              href={`/album/${albumInfo.code}`}
+              className="inline-flex items-center justify-center rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground"
+            >
+              🎞️ Ver el álbum
+            </a>
+          </>
+        ) : (
+          <p className="text-white/70 max-w-sm">
+            {status.eventName} ha terminado. El anfitrión publicará el álbum pronto.
+          </p>
+        )}
       </main>
     );
   }

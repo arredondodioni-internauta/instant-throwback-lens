@@ -15,6 +15,7 @@ import { Route as JoinRouteImport } from './routes/join'
 import { Route as HostRouteImport } from './routes/_host'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GuestEventIdRouteImport } from './routes/guest.$eventId'
+import { Route as AlbumCodeRouteImport } from './routes/album.$code'
 import { Route as HostEventsIndexRouteImport } from './routes/_host.events.index'
 import { Route as HostEventsNewRouteImport } from './routes/_host.events.new'
 import { Route as HostEventsEventIdRouteImport } from './routes/_host.events.$eventId'
@@ -48,6 +49,11 @@ const GuestEventIdRoute = GuestEventIdRouteImport.update({
   path: '/guest/$eventId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AlbumCodeRoute = AlbumCodeRouteImport.update({
+  id: '/album/$code',
+  path: '/album/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HostEventsIndexRoute = HostEventsIndexRouteImport.update({
   id: '/events/',
   path: '/events/',
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/album/$code': typeof AlbumCodeRoute
   '/guest/$eventId': typeof GuestEventIdRoute
   '/events/$eventId': typeof HostEventsEventIdRoute
   '/events/new': typeof HostEventsNewRoute
@@ -79,6 +86,7 @@ export interface FileRoutesByTo {
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/album/$code': typeof AlbumCodeRoute
   '/guest/$eventId': typeof GuestEventIdRoute
   '/events/$eventId': typeof HostEventsEventIdRoute
   '/events/new': typeof HostEventsNewRoute
@@ -91,6 +99,7 @@ export interface FileRoutesById {
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/album/$code': typeof AlbumCodeRoute
   '/guest/$eventId': typeof GuestEventIdRoute
   '/_host/events/$eventId': typeof HostEventsEventIdRoute
   '/_host/events/new': typeof HostEventsNewRoute
@@ -103,6 +112,7 @@ export interface FileRouteTypes {
     | '/join'
     | '/login'
     | '/signup'
+    | '/album/$code'
     | '/guest/$eventId'
     | '/events/$eventId'
     | '/events/new'
@@ -113,6 +123,7 @@ export interface FileRouteTypes {
     | '/join'
     | '/login'
     | '/signup'
+    | '/album/$code'
     | '/guest/$eventId'
     | '/events/$eventId'
     | '/events/new'
@@ -124,6 +135,7 @@ export interface FileRouteTypes {
     | '/join'
     | '/login'
     | '/signup'
+    | '/album/$code'
     | '/guest/$eventId'
     | '/_host/events/$eventId'
     | '/_host/events/new'
@@ -136,6 +148,7 @@ export interface RootRouteChildren {
   JoinRoute: typeof JoinRoute
   LoginRoute: typeof LoginRoute
   SignupRoute: typeof SignupRoute
+  AlbumCodeRoute: typeof AlbumCodeRoute
   GuestEventIdRoute: typeof GuestEventIdRoute
 }
 
@@ -183,6 +196,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GuestEventIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/album/$code': {
+      id: '/album/$code'
+      path: '/album/$code'
+      fullPath: '/album/$code'
+      preLoaderRoute: typeof AlbumCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_host/events/': {
       id: '/_host/events/'
       path: '/events'
@@ -227,18 +247,9 @@ const rootRouteChildren: RootRouteChildren = {
   JoinRoute: JoinRoute,
   LoginRoute: LoginRoute,
   SignupRoute: SignupRoute,
+  AlbumCodeRoute: AlbumCodeRoute,
   GuestEventIdRoute: GuestEventIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

@@ -4,11 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
   getEventDashboard,
-  endEvent,
   getEventPhotosForDownload,
 } from "@/lib/events.functions";
+import { publishAlbum } from "@/lib/album.functions";
 import { Button } from "@/components/ui/button";
-import { Download, StopCircle, Copy, Users, Camera } from "lucide-react";
+import { Download, Copy, Users, Camera, Sparkles, Link as LinkIcon } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_host/events/$eventId")({
@@ -19,8 +19,8 @@ export const Route = createFileRoute("/_host/events/$eventId")({
 function EventDashboard() {
   const { eventId } = Route.useParams();
   const fnDash = useServerFn(getEventDashboard);
-  const fnEnd = useServerFn(endEvent);
   const fnDownload = useServerFn(getEventPhotosForDownload);
+  const fnPublish = useServerFn(publishAlbum);
 
   const { data, refetch } = useQuery({
     queryKey: ["dashboard", eventId],
@@ -30,11 +30,17 @@ function EventDashboard() {
 
   const [qr, setQr] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
-  const [ending, setEnding] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [albumQr, setAlbumQr] = useState<string | null>(null);
 
   const joinUrl =
     typeof window !== "undefined" && data
       ? `${window.location.origin}/join?code=${data.event.code}`
+      : "";
+
+  const albumUrl =
+    typeof window !== "undefined" && data?.event.code
+      ? `${window.location.origin}/album/${data.event.code}`
       : "";
 
   useEffect(() => {
@@ -56,17 +62,41 @@ function EventDashboard() {
     };
   }, [joinUrl]);
 
-  async function onEnd() {
-    if (!confirm("End this event? Guests will no longer be able to take photos.")) return;
-    setEnding(true);
+  useEffect(() => {
+    let cancelled = false;
+    if (!albumUrl || !data?.event.album_published_at) {
+      setAlbumQr(null);
+      return;
+    }
+    import("qrcode")
+      .then(({ default: QRCode }) => QRCode.toDataURL(albumUrl, { width: 220, margin: 1 }))
+      .then((url) => {
+        if (!cancelled) setAlbumQr(url);
+      })
+      .catch(() => {
+        if (!cancelled) setAlbumQr(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [albumUrl, data?.event.album_published_at]);
+
+  async function onPublish() {
+    if (
+      !confirm(
+        "¿Publicar el álbum?\n\nEsto finaliza el evento, notifica a todos los invitados y el álbum estará disponible durante 3 días.",
+      )
+    )
+      return;
+    setPublishing(true);
     try {
-      await fnEnd({ data: { eventId } });
+      await fnPublish({ data: { eventId } });
       await refetch();
-      toast.success("Event ended.");
+      toast.success("Álbum publicado.");
     } catch (err: any) {
-      toast.error(err?.message ?? "Failed");
+      toast.error(err?.message ?? "Error");
     } finally {
-      setEnding(false);
+      setPublishing(false);
     }
   }
 
@@ -106,6 +136,13 @@ function EventDashboard() {
 
   if (!data) return <main className="p-10 text-muted-foreground">Loading…</main>;
   const { event, guestCount, photoCount } = data;
+  const isPublished = !!event.album_published_at;
+  const expiresAt = event.album_expires_at ? new Date(event.album_expires_at) : null;
+  const expiresIn = expiresAt
+    ? Math.max(0, expiresAt.getTime() - Date.now())
+    : 0;
+  const expiresDays = Math.floor(expiresIn / (24 * 60 * 60 * 1000));
+  const expiresHours = Math.floor((expiresIn % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
 
   return (
     <main className="max-w-3xl mx-auto px-6 py-10">
@@ -171,11 +208,55 @@ function EventDashboard() {
         </div>
       )}
 
+      {isPublished && (
+        <div className="border border-primary/30 rounded-md p-6 mb-8 bg-primary/5">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="h-5 w-5 text-primary" />
+            <h2 className="font-serif text-xl">Álbum publicado</h2>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Expira en {expiresDays}d {expiresHours}h
+          </p>
+          <div className="flex flex-col sm:flex-row gap-6 items-center">
+            {albumQr && (
+              <img src={albumQr} alt="Álbum QR" className="rounded border border-border" />
+            )}
+            <div className="flex-1 w-full">
+              <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
+                Enlace del álbum
+              </div>
+              <div className="flex gap-2">
+                <input
+                  readOnly
+                  value={albumUrl}
+                  className="flex-1 text-xs font-mono border border-border rounded px-2 py-1.5 bg-background"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    navigator.clipboard.writeText(albumUrl);
+                    toast.success("Copiado");
+                  }}
+                >
+                  <Copy className="h-3 w-3" />
+                </Button>
+              </div>
+              <Button asChild variant="link" className="px-0 mt-2">
+                <a href={albumUrl} target="_blank" rel="noreferrer">
+                  <LinkIcon className="h-3 w-3 mr-1" /> Abrir álbum
+                </a>
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row gap-3">
-        {event.status === "active" ? (
-          <Button onClick={onEnd} variant="destructive" disabled={ending}>
-            <StopCircle className="h-4 w-4 mr-2" />
-            {ending ? "Ending…" : "End event"}
+        {!isPublished ? (
+          <Button onClick={onPublish} disabled={publishing || photoCount === 0}>
+            <Sparkles className="h-4 w-4 mr-2" />
+            {publishing ? "Publicando…" : "Publicar álbum"}
           </Button>
         ) : null}
         <Button onClick={onDownload} disabled={downloading || photoCount === 0}>
