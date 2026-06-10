@@ -14,8 +14,93 @@ export type Database = {
   }
   public: {
     Tables: {
+      album_viewers: {
+        Row: {
+          created_at: string
+          event_id: string
+          id: string
+          nickname: string | null
+          push_subscription: Json | null
+          updated_at: string
+          viewer_token: string
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          id?: string
+          nickname?: string | null
+          push_subscription?: Json | null
+          updated_at?: string
+          viewer_token: string
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          id?: string
+          nickname?: string | null
+          push_subscription?: Json | null
+          updated_at?: string
+          viewer_token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "album_viewers_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      comments: {
+        Row: {
+          body: string
+          created_at: string
+          event_id: string
+          id: string
+          nickname: string
+          photo_id: string
+          viewer_token: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          event_id: string
+          id?: string
+          nickname: string
+          photo_id: string
+          viewer_token: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          event_id?: string
+          id?: string
+          nickname?: string
+          photo_id?: string
+          viewer_token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comments_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comments_photo_id_fkey"
+            columns: ["photo_id"]
+            isOneToOne: false
+            referencedRelation: "photos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       events: {
         Row: {
+          album_expires_at: string | null
+          album_published_at: string | null
           code: string
           created_at: string
           ended_at: string | null
@@ -26,6 +111,8 @@ export type Database = {
           status: string
         }
         Insert: {
+          album_expires_at?: string | null
+          album_published_at?: string | null
           code: string
           created_at?: string
           ended_at?: string | null
@@ -36,6 +123,8 @@ export type Database = {
           status?: string
         }
         Update: {
+          album_expires_at?: string | null
+          album_published_at?: string | null
           code?: string
           created_at?: string
           ended_at?: string | null
@@ -114,6 +203,48 @@ export type Database = {
             columns: ["guest_id"]
             isOneToOne: false
             referencedRelation: "guests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reactions: {
+        Row: {
+          created_at: string
+          emoji: string
+          event_id: string
+          id: string
+          photo_id: string
+          viewer_token: string
+        }
+        Insert: {
+          created_at?: string
+          emoji: string
+          event_id: string
+          id?: string
+          photo_id: string
+          viewer_token: string
+        }
+        Update: {
+          created_at?: string
+          emoji?: string
+          event_id?: string
+          id?: string
+          photo_id?: string
+          viewer_token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reactions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reactions_photo_id_fkey"
+            columns: ["photo_id"]
+            isOneToOne: false
+            referencedRelation: "photos"
             referencedColumns: ["id"]
           },
         ]
