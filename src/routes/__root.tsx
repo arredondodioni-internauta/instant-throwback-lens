@@ -96,7 +96,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
       { name: "twitter:title", content: "Reel — Disposable camera for events" },
       { name: "description", content: "Memory Capsule is an app that simulates analog cameras, limiting photo captures and delaying immediate viewing." },
       { property: "og:description", content: "Memory Capsule is an app that simulates analog cameras, limiting photo captures and delaying immediate viewing." },
