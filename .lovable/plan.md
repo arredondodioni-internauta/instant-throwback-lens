@@ -1,133 +1,116 @@
-# Reel — Post-Event Album
+## Migration steps (repo on GitHub, new Supabase project ready)
 
-Builds the full album experience from "Publicar álbum" → guests view, react, comment, and save photos. Anonymous photo authorship throughout. 3-day expiry. Realtime sync.
+Do these locally on your machine, not in Lovable.
 
----
+### 1. Clone and install
+```bash
+git clone <your-github-repo>
+cd <repo>
+bun install    # or npm install
+```
 
-## 1. Database (one migration)
+### 2. Link Supabase CLI to your new project
+Get your project ref from Supabase dashboard → Project Settings → General (`abc123xyz...`).
 
-New columns on `events`:
-- `album_published_at timestamptz null`
-- `album_expires_at timestamptz null` (set to `published_at + 3 days`)
+```bash
+npx supabase login
+npx supabase link --project-ref <YOUR_PROJECT_REF>
+```
 
-New tables (all in `public`, with GRANTs):
+### 3. Push the schema
+```bash
+npx supabase db push
+```
+This runs everything under `supabase/migrations/` against your new database: tables (`events`, `guests`, `photos`, `reactions`, `comments`, `album_viewers`), RLS policies, grants.
 
-**`reactions`** — one row per (photo, anon viewer, emoji)
-- `id uuid pk`, `photo_id uuid fk photos`, `event_id uuid fk events`
-- `viewer_token uuid not null` (random token stored in guest's localStorage; allows "one reaction per user per photo")
-- `emoji text check in ('😂','🥹','🔥','👏')`
-- `created_at timestamptz`
-- unique(photo_id, viewer_token) → enforces "one active reaction per user per photo"
+Verify in Supabase dashboard → Table Editor that all 6 tables exist.
 
-**`comments`** — flat list, max 140 chars
-- `id uuid pk`, `photo_id uuid fk photos`, `event_id uuid fk events`
-- `viewer_token uuid not null`, `nickname text not null` (≤ 40 chars, captured on first comment if not already a guest)
-- `body text check (length(body) between 1 and 140)`
-- `created_at timestamptz`
+### 4. Create the storage bucket
+Supabase dashboard → Storage → New bucket:
+- Name: `event-photos`
+- Public: **off** (private)
 
-**`album_viewers`** (lightweight) — for push subscription mapping
-- `id uuid pk`, `event_id uuid fk events`, `viewer_token uuid`
-- `nickname text null`, `push_subscription jsonb null`, `created_at timestamptz`
-- unique(event_id, viewer_token)
+Storage RLS policies should have come from the migrations. If not, check `supabase/migrations/` for the storage policy file and re-run just that one via SQL editor.
 
-RLS: enable on all three; deny direct client access. All reads/writes go through server functions using `supabaseAdmin` (album is public-by-code, so server functions gate on `album_published_at is not null and album_expires_at > now()`).
+### 5. Configure auth
+Dashboard → Authentication → Providers:
+- **Email**: enabled. Under Email settings, turn **off** "Confirm email" to match current behavior (frictionless host signup).
+- **Site URL** (Authentication → URL Configuration): add `http://localhost:5173` for dev and your future Vercel URL once you have it.
 
-Realtime publication: add `reactions` and `comments` to `supabase_realtime` so the album page can subscribe.
+### 6. Get your keys
+Dashboard → Project Settings → API. Copy:
+- Project URL
+- `anon` / `publishable` key
+- `service_role` key (secret — server only)
+- Project ref (the subdomain)
 
----
+### 7. Update `.env` locally
+```
+VITE_SUPABASE_URL=https://<ref>.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=<anon key>
+VITE_SUPABASE_PROJECT_ID=<ref>
+SUPABASE_URL=https://<ref>.supabase.co
+SUPABASE_PUBLISHABLE_KEY=<anon key>
+SUPABASE_SERVICE_ROLE_KEY=<service role key>
+```
 
-## 2. Server functions (`src/lib/album.functions.ts`)
+### 8. Regenerate types
+```bash
+npx supabase gen types typescript --linked > src/integrations/supabase/types.ts
+```
 
-All take `{ code }` (event code) + `viewerToken` and verify the album is published and not expired.
+### 9. Simplify the client files
+The Lovable-managed files may reference Lovable Cloud specifics. Once outside Lovable, replace them with standard versions:
 
-- `publishAlbum({ eventId })` — host-only (uses `requireSupabaseAuth`). Sets `album_published_at = now()`, `album_expires_at = now() + 3 days`, status `ended`. Then triggers push to all `album_viewers` with a subscription for this event.
-- `getAlbum({ code, viewerToken })` — returns `{ event: {name, expiresAt}, photos: [{id, takenAt, url, reactions: {emoji: count}, myReaction, commentCount}] }`. Signs storage URLs (1h TTL). Ordered chronologically. Computes "featured" = top 3 photos by total reactions (only if any exist).
-- `toggleReaction({ code, viewerToken, photoId, emoji })` — upsert with unique constraint; if same emoji exists, delete; if different, update; if none, insert. Returns new counts for that photo.
-- `addComment({ code, viewerToken, nickname, photoId, body })` — validates length, inserts.
-- `listComments({ code, photoId })` — returns last 50 ordered desc, client paginates.
-- `registerPushSubscription({ code, viewerToken, nickname, subscription })` — upsert into `album_viewers`. Called on guest join + when permission granted.
+**`src/integrations/supabase/client.ts`**
+```ts
+import { createClient } from '@supabase/supabase-js'
+import type { Database } from './types'
 
----
+export const supabase = createClient<Database>(
+  import.meta.env.VITE_SUPABASE_URL!,
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY!,
+)
+```
 
-## 3. Host publish flow
+**`src/integrations/supabase/client.server.ts`**
+```ts
+import { createClient } from '@supabase/supabase-js'
+import type { Database } from './types'
 
-Edit `src/routes/_host.events.$eventId.tsx`:
-- Replace standalone "End event" with a single CTA **"Publicar álbum"** (red→primary). Confirmation dialog explains: ends the event, notifies all guests, album available for 3 days.
-- After publish: show album link + QR + "Copiar enlace al álbum" + countdown "Expira en 2d 23h".
-- Existing ZIP download stays for host.
+export const supabaseAdmin = createClient<Database>(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false, autoRefreshToken: false } },
+)
+```
 
----
+Keep `auth-middleware.ts` and `auth-attacher.ts` as-is unless they reference Lovable-specific paths — check and adjust env var names to match `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY`.
 
-## 4. Album route (`src/routes/album.$code.tsx`) — public
+### 10. Generate VAPID keys (for push notifications)
+```bash
+npx web-push generate-vapid-keys
+```
+Save the public key as `VITE_VAPID_PUBLIC_KEY` and private as `VAPID_PRIVATE_KEY` in `.env`. Update wherever the current code references the old VAPID public key.
 
-Layout: mobile-first, full-bleed black background, no nav chrome.
+### 11. Run locally
+```bash
+bun run dev
+```
+Smoke test: signup as host → create event → open in another browser → join → take a photo → publish album.
 
-**Header**: event name + small "expira en Xd Xh" + share button.
+### 12. Deploy to Vercel
+- Vercel → Import Project → pick the GitHub repo.
+- Framework preset: **Other** (TanStack Start).
+- The project currently builds for Cloudflare Workers. For Vercel, in `vite.config.ts` change the TanStack Start target from `'cloudflare-module'` to `'vercel'`, then `bun install` again.
+- Set all env vars from step 7 + VAPID keys in Vercel Project Settings → Environment Variables.
+- Deploy.
+- Once deployed, add the Vercel URL to Supabase → Auth → URL Configuration → Site URL and Redirect URLs.
 
-**Grid**:
-- If 1+ photos have reactions: top 3 reacted photos render full-width stacked as hero cards (square, full grid width).
-- Below: 2-column square grid, chronological (oldest first), `aspect-square object-cover`.
-- Reaction badge overlay on bottom-right of each tile: `😂 3` (top emoji + count). Double-tap fires 🔥 reaction with quick scale animation.
-- Long-press (500ms) → enters selection mode (haptic via `navigator.vibrate(15)`).
+### Known gotchas
+- **Cloudflare → Vercel adapter swap**: if `vite.config.ts` has `target: 'cloudflare-module'`, change to `target: 'vercel'`. If it uses a specific server preset package, swap it. Vercel build logs will tell you clearly if this is wrong.
+- **Types drift**: after any future migration, re-run step 8.
+- **Password hashes**: any test host accounts in Lovable Cloud don't come across — sign up fresh on the new project.
+- **From here on**: Lovable's editor stops being the source of truth. Do all future work in Claude Code / Cursor / locally. The Lovable ↔ GitHub sync will still push edits from Lovable, but any DB change made via Lovable would target Lovable Cloud (empty for you now), not your project.
 
-**Selection mode**:
-- Top bar: "Seleccionar todas" + "Cancelar". Each tile shows a circle top-right (empty/filled-check).
-- Drag-to-select: pointer events on the grid container track which tile the pointer is over and toggle on first entry (iOS Photos style).
-- Bottom action bar (fixed, above safe area): "N fotos seleccionadas" + filled "↓ Guardar".
-- Save: iterates selected photos, calls `navigator.share({ files: [File] })` per photo (user picks "Save Image" → camera roll). If `navigator.canShare` unsupported, falls back to triggering `<a download>` per photo. Progress toast for >5. Final toast "X fotos guardadas ✓".
-
-**Lightbox** (`<Dialog>` full-screen, photo at native aspect):
-- Swipe gestures via pointer events:
-  - left/right → prev/next (preload neighbors)
-  - down → close
-  - up → opens comments bottom sheet
-- Long-press → emoji pill (😂 🥹 🔥 👏) floats above photo; tap picks reaction.
-- Double-tap → quick 🔥.
-- Top-right: download (single-photo share-sheet save).
-- Bottom: relative timestamp ("hace 2h"), no author.
-
-**Comments sheet** (`<Sheet side="bottom">`):
-- Header "Comentarios". List shows nickname + body + relative time, newest at bottom.
-- Sticky input + send button. Max 140 chars with counter. If `viewerToken` has no nickname yet → first send prompts for nickname (small inline dialog) then submits.
-
-**Realtime**: subscribe to `postgres_changes` on `reactions` and `comments` filtered by `event_id`; merge updates into local state.
-
-**Viewer token**: on first load, read/write `reel:viewer-token` in localStorage. Anonymous, stable per device.
-
-**Expiry**: if `album_expires_at < now()`, render "Este álbum ya no está disponible" instead of grid.
-
----
-
-## 5. Web Push (PWA)
-
-Per the PWA skill, ship the messaging-style worker — not an app-shell cache:
-
-- Generate VAPID keypair once; store private key as secret `VAPID_PRIVATE_KEY`, expose public as `VITE_VAPID_PUBLIC_KEY`.
-- New `public/push-sw.js` (messaging worker only, no app-shell caching, no Lovable-preview guards needed since it's not a Workbox SW). Handles `push` → `showNotification` and `notificationclick` → open `/album/{code}`.
-- Register from album-related screens only (`/join`, `/guest/:eventId`): after user joins, ask notification permission (one-time, deferrable). On grant, subscribe with VAPID public key, POST to `registerPushSubscription`.
-- New manifest at `public/manifest.webmanifest` so iOS users can "Add to Home Screen" (required for iOS web push). Add link tags in `__root.tsx` head.
-- New server route `src/routes/api/public/push/send.ts` is internal-only (called from `publishAlbum` server fn, not externally). Uses `web-push` npm package with VAPID keys to fan out to all `album_viewers.push_subscription` for the event. **Note**: `web-push` is Node-only; will need to send pushes from a server route using fetch directly to the push endpoints with VAPID JWT signed via Web Crypto (worker-compatible). Implementation uses `jose` for JWT signing — Worker-safe.
-
-Graceful fallback: if user denied notifications, they'll just see the album when they next open the camera screen (we'll show an in-app banner "📷 El álbum de [evento] ya está disponible" linking to `/album/{code}` once `album_published_at` is set).
-
----
-
-## 6. Expiry job
-
-`pg_cron` daily job: `DELETE FROM photos / reactions / comments WHERE event_id IN (SELECT id FROM events WHERE album_expires_at < now())` + storage cleanup via server route called by cron with anon-key apikey header.
-
----
-
-## Technical notes
-
-- `web-push` library is Node-only and won't run in Cloudflare Workers. We'll implement VAPID JWT + raw `fetch` to the subscription endpoint using `jose` (Worker-safe).
-- Drag-to-select uses `pointermove` + `elementFromPoint` to identify the tile under finger.
-- Storage URLs are signed for 1h; album page re-fetches on focus if a URL is older than 50min.
-- Reactions/comments are anonymous via `viewer_token`; nicknames apply only to comments.
-- No author on photos anywhere — even host download ZIP filenames will change to `photo_001.jpg` (currently uses guest name; flag this for confirmation if the host still wants the per-guest folders).
-
-## Out of scope (call out for follow-up)
-
-- iOS native push (requires native app; only PWA + Add to Home Screen works on iOS web).
-- Album sharing to non-guests via deep link preview / OG image generation.
-- Removing per-guest folder structure in host ZIP download — currently uses `guests.display_name`. Plan keeps host ZIP as-is; confirm if you want it anonymized too.
+Want me to actually make any of these edits inside Lovable before you continue locally (e.g. simplify the client files, swap the Vercel adapter in `vite.config.ts`)? Or is this all you needed?
