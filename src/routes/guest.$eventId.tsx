@@ -36,6 +36,12 @@ function GuestCamera() {
     shotsPerGuest: number;
     shotsTaken: number;
   } | null>(null);
+  // Lets the camera-start effect check the latest status without depending
+  // on it, so starting the camera doesn't wait on the status round trip.
+  const statusRef = useRef<typeof status>(null);
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
   const [flashing, setFlashing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -169,7 +175,9 @@ function GuestCamera() {
     };
   }, [status?.eventStatus, eventId, fnAlbumStatus]);
 
-  // Start camera
+  // Start camera immediately, in parallel with the guest-status network call,
+  // so a slow connection doesn't delay the viewfinder appearing. Bail out if
+  // we've since learned (via statusRef) that the event already ended.
   useEffect(() => {
     let cancelled = false;
     async function start() {
@@ -196,7 +204,7 @@ function GuestCamera() {
             audio: false,
           });
         }
-        if (cancelled) {
+        if (cancelled || statusRef.current?.eventStatus === "ended") {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
@@ -220,13 +228,23 @@ function GuestCamera() {
         setCameraError(err?.message ?? "Camera unavailable");
       }
     }
-    if (status?.eventStatus === "active") start();
+    start();
     return () => {
       cancelled = true;
       streamRef.current?.getTracks().forEach((t) => t.stop());
       trackRef.current = null;
     };
-  }, [facing, status?.eventStatus]);
+  }, [facing]);
+
+  // Stop the camera if the event ends while the stream is already running
+  // (e.g. the host ends it mid-session).
+  useEffect(() => {
+    if (status?.eventStatus === "ended") {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      trackRef.current = null;
+    }
+  }, [status?.eventStatus]);
 
   // Apply zoom to the active track whenever it changes.
   useEffect(() => {
@@ -339,23 +357,34 @@ function GuestCamera() {
       );
     }
 
+    // Local capture is done — hand control back to the guest immediately.
+    // The upload continues in the background so a slow connection no longer
+    // makes the shutter feel stuck.
+    setBusy(false);
+
     if (!blob) {
-      setBusy(false);
       toast.error("Could not capture photo");
       return;
     }
+
+    // Optimistically count this shot right away so the counter and shot
+    // limit feel instant, regardless of how long the upload takes.
+    setStatus((s) => (s ? { ...s, shotsTaken: s.shotsTaken + 1 } : s));
+
     const token = localStorage.getItem(`reel:event:${eventId}`)!;
     const fd = new FormData();
     fd.append("deviceToken", token);
     fd.append("file", new File([blob], "photo.jpg", { type: "image/jpeg" }));
-    try {
-      const res = await fnTake({ data: fd });
-      setStatus((s) => (s ? { ...s, shotsTaken: res.shotsTaken } : s));
-    } catch (err: any) {
-      toast.error(err?.message ?? "Could not save photo");
-    } finally {
-      setBusy(false);
-    }
+    fnTake({ data: fd })
+      .then((res) => {
+        // Reconcile with the authoritative count from the server.
+        setStatus((s) => (s ? { ...s, shotsTaken: res.shotsTaken } : s));
+      })
+      .catch((err: any) => {
+        // Upload failed — give the shot back so they can retake it.
+        setStatus((s) => (s ? { ...s, shotsTaken: Math.max(0, s.shotsTaken - 1) } : s));
+        toast.error(err?.message ?? "Could not save photo — try again");
+      });
   }
 
   if (!status) {
