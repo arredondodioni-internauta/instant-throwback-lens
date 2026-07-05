@@ -12,6 +12,29 @@ export const Route = createFileRoute("/guest/$eventId")({
   head: () => ({ meta: [{ title: "Camera — Reel" }] }),
 });
 
+// Vercel rejects any single function payload over 4.5MB, and native camera
+// resolution routinely exceeds that. Cap the longest edge and re-encode so
+// uploads stay well under the limit even on a slow connection.
+const MAX_PHOTO_DIMENSION = 1600;
+const PHOTO_QUALITY = 0.8;
+
+// Downscale + re-encode a captured photo blob (e.g. from ImageCapture, which
+// returns the native, uncapped sensor resolution).
+async function resizePhotoBlob(blob: Blob, maxDim: number, quality: number): Promise<Blob> {
+  const bitmap = await createImageBitmap(blob);
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  return await new Promise<Blob>((resolve) =>
+    canvas.toBlob((b) => resolve(b!), "image/jpeg", quality),
+  );
+}
+
 function GuestCamera() {
   const { eventId } = Route.useParams();
   const nav = useNavigate();
@@ -330,14 +353,16 @@ function GuestCamera() {
     setTimeout(() => setFlashing(false), 120);
 
     let blob: Blob | null = null;
-    // Prefer ImageCapture for full-sensor resolution when available.
+    // Prefer ImageCapture for full-sensor resolution when available, then
+    // downscale — the native resolution it returns routinely exceeds
+    // Vercel's upload limit.
     const track = trackRef.current;
     const ImageCaptureCtor = (window as any).ImageCapture;
     if (track && ImageCaptureCtor) {
       try {
         const ic = new ImageCaptureCtor(track);
-        // takePhoto returns the native JPEG at the photo resolution
-        blob = await ic.takePhoto();
+        const native = await ic.takePhoto();
+        blob = await resizePhotoBlob(native, MAX_PHOTO_DIMENSION, PHOTO_QUALITY);
       } catch {
         blob = null;
       }
@@ -345,15 +370,18 @@ function GuestCamera() {
     if (!blob) {
       const video = videoRef.current;
       const settings = track?.getSettings?.();
-      const w = settings?.width ?? video.videoWidth;
-      const h = settings?.height ?? video.videoHeight;
+      const rawW = settings?.width ?? video.videoWidth;
+      const rawH = settings?.height ?? video.videoHeight;
+      const scale = Math.min(1, MAX_PHOTO_DIMENSION / Math.max(rawW, rawH));
+      const w = Math.round(rawW * scale);
+      const h = Math.round(rawH * scale);
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext("2d")!;
       ctx.drawImage(video, 0, 0, w, h);
       blob = await new Promise<Blob>((resolve) =>
-        canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.95),
+        canvas.toBlob((b) => resolve(b!), "image/jpeg", PHOTO_QUALITY),
       );
     }
 
