@@ -66,6 +66,17 @@ function GuestCamera() {
     statusRef.current = status;
   }, [status]);
   const [flashing, setFlashing] = useState(false);
+  // Seconds left in the post-shot "hold still" prompt, or null when hidden.
+  // Purely instructional — capture and upload already happened on tap, this
+  // just discourages guests from moving the phone while the sensor is still
+  // reading out the frame.
+  const [holdStillSecondsLeft, setHoldStillSecondsLeft] = useState<number | null>(null);
+  const holdStillTimersRef = useRef<number[]>([]);
+  useEffect(() => {
+    return () => {
+      holdStillTimersRef.current.forEach((t) => window.clearTimeout(t));
+    };
+  }, []);
   const [busy, setBusy] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number; step: number } | null>(null);
@@ -341,6 +352,26 @@ function GuestCamera() {
     };
   }, []);
 
+  const HOLD_STILL_SECONDS = 2;
+
+  // Shows a brief full-screen "hold still" prompt after each shot. This is
+  // advisory only — it never blocks the shutter — restarting it on every tap
+  // so rapid shots each get their own countdown instead of fighting the
+  // previous one's timers.
+  function startHoldStillCountdown() {
+    holdStillTimersRef.current.forEach((t) => window.clearTimeout(t));
+    holdStillTimersRef.current = [];
+
+    setHoldStillSecondsLeft(HOLD_STILL_SECONDS);
+    for (let secondsLeft = HOLD_STILL_SECONDS - 1; secondsLeft >= 0; secondsLeft--) {
+      const delay = (HOLD_STILL_SECONDS - secondsLeft) * 1000;
+      const timer = window.setTimeout(() => {
+        setHoldStillSecondsLeft(secondsLeft > 0 ? secondsLeft : null);
+      }, delay);
+      holdStillTimersRef.current.push(timer);
+    }
+  }
+
   async function shoot() {
     if (busy || !status || !videoRef.current) return;
     const remaining = status.shotsPerGuest - status.shotsTaken;
@@ -351,6 +382,7 @@ function GuestCamera() {
     setFlashing(true);
     playShutter();
     setTimeout(() => setFlashing(false), 120);
+    startHoldStillCountdown();
 
     let blob: Blob | null = null;
     // Prefer ImageCapture for full-sensor resolution when available, then
@@ -493,6 +525,16 @@ function GuestCamera() {
             flashing ? "opacity-90" : "opacity-0"
           }`}
         />
+
+        {/* Hold-still prompt — advisory only, never blocks the shutter */}
+        {holdStillSecondsLeft !== null && (
+          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-2 bg-black/35 pointer-events-none">
+            <span className="font-serif text-8xl leading-none text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)]">
+              {holdStillSecondsLeft}
+            </span>
+            <span className="text-xs uppercase tracking-[0.25em] text-white/85">Hold still</span>
+          </div>
+        )}
 
         {/* Corner brackets */}
         <div className="absolute top-3 left-3 w-6 h-6 border-t-2 border-l-2 border-white/50 pointer-events-none" />
