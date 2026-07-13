@@ -19,8 +19,15 @@ const MAX_PHOTO_DIMENSION = 1600;
 const PHOTO_QUALITY = 0.8;
 
 // Downscale + re-encode a captured photo blob (e.g. from ImageCapture, which
-// returns the native, uncapped sensor resolution).
-async function resizePhotoBlob(blob: Blob, maxDim: number, quality: number): Promise<Blob> {
+// returns the native, uncapped sensor resolution). ImageCapture reads
+// straight from the sensor, bypassing any CSS mirroring on the <video>
+// preview, so front-camera shots need `mirror` to match what the guest saw.
+async function resizePhotoBlob(
+  blob: Blob,
+  maxDim: number,
+  quality: number,
+  mirror: boolean,
+): Promise<Blob> {
   const bitmap = await createImageBitmap(blob);
   const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
   const w = Math.round(bitmap.width * scale);
@@ -28,7 +35,12 @@ async function resizePhotoBlob(blob: Blob, maxDim: number, quality: number): Pro
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, w, h);
+  const ctx = canvas.getContext("2d")!;
+  if (mirror) {
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.drawImage(bitmap, 0, 0, w, h);
   bitmap.close();
   return await new Promise<Blob>((resolve) =>
     canvas.toBlob((b) => resolve(b!), "image/jpeg", quality),
@@ -394,7 +406,7 @@ function GuestCamera() {
       try {
         const ic = new ImageCaptureCtor(track);
         const native = await ic.takePhoto();
-        blob = await resizePhotoBlob(native, MAX_PHOTO_DIMENSION, PHOTO_QUALITY);
+        blob = await resizePhotoBlob(native, MAX_PHOTO_DIMENSION, PHOTO_QUALITY, facing === "user");
       } catch {
         blob = null;
       }
@@ -411,6 +423,10 @@ function GuestCamera() {
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext("2d")!;
+      if (facing === "user") {
+        ctx.translate(w, 0);
+        ctx.scale(-1, 1);
+      }
       ctx.drawImage(video, 0, 0, w, h);
       blob = await new Promise<Blob>((resolve) =>
         canvas.toBlob((b) => resolve(b!), "image/jpeg", PHOTO_QUALITY),
@@ -516,6 +532,9 @@ function GuestCamera() {
             playsInline
             muted
             className="absolute inset-0 w-full h-full object-cover"
+            // Front camera preview is mirrored, matching every phone camera
+            // app, so framing a shot feels like looking in a mirror.
+            style={facing === "user" ? { transform: "scaleX(-1)" } : undefined}
           />
         )}
 
