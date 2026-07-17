@@ -62,7 +62,6 @@ function GuestCamera() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const trackRef = useRef<MediaStreamTrack | null>(null);
-  const viewfinderRef = useRef<HTMLDivElement>(null);
   const [facing, setFacing] = useState<"user" | "environment">("environment");
   const [status, setStatus] = useState<{
     displayName: string;
@@ -91,19 +90,6 @@ function GuestCamera() {
   }, []);
   const [busy, setBusy] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number; step: number } | null>(null);
-  const [zoom, setZoom] = useState(1);
-
-  // Live refs so the touch handlers always read the current zoom/caps without
-  // re-binding listeners (which was causing stale-closure jumps mid-pinch).
-  const zoomRef = useRef(1);
-  const zoomCapsRef = useRef<{ min: number; max: number; step: number } | null>(null);
-  useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
-  useEffect(() => {
-    zoomCapsRef.current = zoomCaps;
-  }, [zoomCaps]);
 
   // Lock the page into a true full-screen, no-scroll, no-pinch-zoom camera shell.
   useEffect(() => {
@@ -260,15 +246,6 @@ function GuestCamera() {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
-        // Detect optical/digital zoom capability and reset to 1x on (re)start.
-        const caps: any = track?.getCapabilities?.() ?? {};
-        if (caps.zoom && typeof caps.zoom.min === "number" && typeof caps.zoom.max === "number") {
-          setZoomCaps({ min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step ?? 0.1 });
-          setZoom(caps.zoom.min);
-        } else {
-          setZoomCaps(null);
-          setZoom(1);
-        }
         setCameraError(null);
       } catch (err: any) {
         setCameraError(err?.message ?? "Camera unavailable");
@@ -292,77 +269,6 @@ function GuestCamera() {
     }
   }, [status?.eventStatus]);
 
-  // Apply zoom to the active track whenever it changes.
-  useEffect(() => {
-    const track = trackRef.current;
-    if (!track || !zoomCaps) return;
-    const clamped = Math.min(zoomCaps.max, Math.max(zoomCaps.min, zoom));
-    try {
-      // advanced constraints are required on some browsers for `zoom`
-      (track.applyConstraints as any)({ advanced: [{ zoom: clamped }] }).catch(() => {});
-    } catch {
-      // ignore
-    }
-  }, [zoom, zoomCaps]);
-
-  // Pinch-to-zoom inside the viewfinder. Listeners are bound once and read
-  // the current zoom/caps from refs so updates during the gesture don't
-  // re-bind the handlers or reset the starting point.
-  useEffect(() => {
-    const el = viewfinderRef.current;
-    if (!el) return;
-    let startDist = 0;
-    let startZoom = 1;
-
-    const dist = (touches: TouchList) => {
-      const a = touches[0];
-      const b = touches[1];
-      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-    };
-
-    const onStart = (e: TouchEvent) => {
-      if (e.touches.length >= 2) {
-        e.preventDefault();
-        startDist = dist(e.touches);
-        startZoom = zoomRef.current;
-      }
-    };
-    const onMove = (e: TouchEvent) => {
-      if (e.touches.length >= 2) {
-        e.preventDefault();
-        const caps = zoomCapsRef.current;
-        if (!caps || startDist <= 0) return;
-        const ratio = dist(e.touches) / startDist;
-        const next = Math.min(caps.max, Math.max(caps.min, startZoom * ratio));
-        // Apply directly to the track for smooth, continuous zoom — bypass
-        // React render latency during the gesture.
-        const track = trackRef.current;
-        if (track) {
-          try {
-            (track.applyConstraints as any)({ advanced: [{ zoom: next }] }).catch(() => {});
-          } catch {
-            // ignore
-          }
-        }
-        zoomRef.current = next;
-        setZoom(next);
-      }
-    };
-    const onEnd = () => {
-      startDist = 0;
-    };
-
-    el.addEventListener("touchstart", onStart, { passive: false });
-    el.addEventListener("touchmove", onMove, { passive: false });
-    el.addEventListener("touchend", onEnd);
-    el.addEventListener("touchcancel", onEnd);
-    return () => {
-      el.removeEventListener("touchstart", onStart);
-      el.removeEventListener("touchmove", onMove);
-      el.removeEventListener("touchend", onEnd);
-      el.removeEventListener("touchcancel", onEnd);
-    };
-  }, []);
 
   const HOLD_STILL_SECONDS = 2;
 
@@ -516,11 +422,7 @@ function GuestCamera() {
       style={{ touchAction: "none" }}
     >
       {/* Viewfinder — fills the whole screen */}
-      <div
-        ref={viewfinderRef}
-        className="absolute inset-0 overflow-hidden bg-black"
-        style={{ touchAction: "none" }}
-      >
+      <div className="absolute inset-0 overflow-hidden bg-black" style={{ touchAction: "none" }}>
         {cameraError ? (
           <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-white/70">
             {cameraError}. Please allow camera access.
@@ -560,32 +462,6 @@ function GuestCamera() {
         <div className="absolute top-3 right-3 w-6 h-6 border-t-2 border-r-2 border-white/50 pointer-events-none" />
         <div className="absolute bottom-3 left-3 w-6 h-6 border-b-2 border-l-2 border-white/50 pointer-events-none" />
         <div className="absolute bottom-3 right-3 w-6 h-6 border-b-2 border-r-2 border-white/50 pointer-events-none" />
-
-        {/* Vertical zoom slider */}
-        {zoomCaps && (
-          <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 pointer-events-auto z-30 py-2 px-1">
-            <span className="text-xs font-mono text-white/60 bg-black/50 px-1.5 py-0.5 rounded-full">
-              {zoom.toFixed(1)}x
-            </span>
-            <div className="relative" style={{ height: 260, width: 20 }}>
-              <input
-                type="range"
-                min={zoomCaps.min}
-                max={zoomCaps.max}
-                step={zoomCaps.step}
-                value={zoom}
-                onChange={(e) => setZoom(parseFloat(e.target.value))}
-                className="accent-primary absolute"
-                style={{
-                  width: 260,
-                  left: "50%",
-                  top: "50%",
-                  transform: "translate(-50%, -50%) rotate(-90deg)",
-                }}
-              />
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Top bar overlay */}
