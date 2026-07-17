@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { getGuestStatus, takePhoto } from "@/lib/events.functions";
 import { getEventAlbumStatus } from "@/lib/album.functions";
 import { subscribeToAlbumPush } from "@/lib/push-client";
-import { RotateCw } from "lucide-react";
+import { RotateCw, Zap, ZapOff } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/guest/$eventId")({
@@ -63,6 +63,12 @@ function GuestCamera() {
   const streamRef = useRef<MediaStream | null>(null);
   const trackRef = useRef<MediaStreamTrack | null>(null);
   const [facing, setFacing] = useState<"user" | "environment">("environment");
+  // Only meaningful on the front camera — there's no way to control the
+  // physical LED flash from a web app, so the "flash" here is a bright
+  // screen flash, the same trick iPhone's own Camera app uses for selfies.
+  // It does nothing useful on the rear camera, since the screen doesn't
+  // face whatever's being photographed, so the toggle is hidden there.
+  const [flashEnabled, setFlashEnabled] = useState(false);
   const [status, setStatus] = useState<{
     displayName: string;
     eventName: string;
@@ -296,10 +302,19 @@ function GuestCamera() {
     if (remaining <= 0) return;
 
     setBusy(true);
-    // flash + shutter sound
-    setFlashing(true);
     playShutter();
-    setTimeout(() => setFlashing(false), 120);
+
+    // Screen flash only makes sense on the front camera — the screen faces
+    // the same direction as whatever's being photographed there. Hold it lit
+    // through the capture so it actually adds light, instead of the usual
+    // quick feedback flash that fires after the fact.
+    const useScreenFlash = facing === "user" && flashEnabled;
+    setFlashing(true);
+    if (useScreenFlash) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } else {
+      setTimeout(() => setFlashing(false), 120);
+    }
     startHoldStillCountdown();
 
     let blob: Blob | null = null;
@@ -337,6 +352,10 @@ function GuestCamera() {
       blob = await new Promise<Blob>((resolve) =>
         canvas.toBlob((b) => resolve(b!), "image/jpeg", PHOTO_QUALITY),
       );
+    }
+
+    if (useScreenFlash) {
+      setFlashing(false);
     }
 
     // Local capture is done — hand control back to the guest immediately.
@@ -440,10 +459,10 @@ function GuestCamera() {
           />
         )}
 
-        {/* Flash overlay */}
+        {/* Flash overlay — also doubles as the front-camera screen flash */}
         <div
           className={`absolute inset-0 bg-white pointer-events-none transition-opacity duration-100 ${
-            flashing ? "opacity-90" : "opacity-0"
+            flashing ? "opacity-100" : "opacity-0"
           }`}
         />
 
@@ -501,7 +520,17 @@ function GuestCamera() {
         className="absolute bottom-0 inset-x-0 z-20 px-8 flex items-center justify-between bg-gradient-to-t from-black/60 to-transparent"
         style={{ paddingTop: 24, paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
       >
-        <div className="w-12" />
+        <div className="w-12 flex justify-start">
+          {facing === "user" && (
+            <button
+              onClick={() => setFlashEnabled((f) => !f)}
+              aria-label={flashEnabled ? "Turn off flash" : "Turn on flash"}
+              className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center"
+            >
+              {flashEnabled ? <Zap className="h-5 w-5" /> : <ZapOff className="h-5 w-5" />}
+            </button>
+          )}
+        </div>
         <button
           onClick={shoot}
           disabled={busy}
