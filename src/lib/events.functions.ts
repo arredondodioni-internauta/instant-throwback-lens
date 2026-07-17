@@ -148,11 +148,16 @@ export const getEventByCode = createServerFn({ method: "POST" })
     const code = data.code.toUpperCase().trim();
     const { data: ev } = await supabaseAdmin
       .from("events")
-      .select("id, name, status")
+      .select("id, name, status, shots_per_guest")
       .eq("code", code)
       .single();
     if (!ev) throw new Error("Event not found. Check the code.");
-    return { id: ev.id, name: ev.name, status: ev.status as "active" | "ended" };
+    return {
+      id: ev.id,
+      name: ev.name,
+      status: ev.status as "active" | "ended",
+      shotsPerGuest: ev.shots_per_guest as number,
+    };
   });
 
 export const joinEvent = createServerFn({ method: "POST" })

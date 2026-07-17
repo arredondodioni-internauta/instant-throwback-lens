@@ -17,23 +17,25 @@ export const Route = createFileRoute("/join")({
   head: () => ({ meta: [{ title: "Únete al evento — mosaic" }] }),
 });
 
-const STEPS = [
-  {
-    n: "01",
-    t: "Solo tienes 5 fotos.",
-    d: "Nada de repetir, nada de borrar. Como la cámara analógica de tus padres.",
-  },
-  {
-    n: "02",
-    t: "No muevas el móvil al disparar.",
-    d: "Un pequeño temblor arruina la foto.",
-  },
-  {
-    n: "03",
-    t: "No verás nada hasta el final.",
-    d: "Tus fotos van directo al anfitrión. Cuando acabe el evento, se revelan todas de golpe.",
-  },
-];
+function getSteps(shotsPerGuest: number) {
+  return [
+    {
+      n: "01",
+      t: `Solo tienes ${shotsPerGuest} fotos.`,
+      d: "Nada de repetir, nada de borrar. Como la cámara analógica de tus padres.",
+    },
+    {
+      n: "02",
+      t: "No muevas el móvil al disparar.",
+      d: "Un pequeño temblor arruina la foto.",
+    },
+    {
+      n: "03",
+      t: "No verás nada hasta el final.",
+      d: "Tus fotos van directo al anfitrión. Cuando acabe el evento, se revelan todas de golpe.",
+    },
+  ];
+}
 
 function JoinPage() {
   const nav = useNavigate();
@@ -76,13 +78,13 @@ function JoinPage() {
           </h1>
         </div>
         <ol className="mb-8 space-y-6">
-          {STEPS.map((s, i) => (
+          {getSteps(eventInfo?.shotsPerGuest ?? 5).map((s, i, steps) => (
             <li key={s.n} className="relative flex gap-4">
               <div className="flex flex-col items-center">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-medium text-sm">
                   {i + 1}
                 </div>
-                {i < STEPS.length - 1 && (
+                {i < steps.length - 1 && (
                   <div className="mt-2 w-px flex-1 bg-border" />
                 )}
               </div>
