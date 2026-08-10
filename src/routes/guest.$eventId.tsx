@@ -97,6 +97,20 @@ function GuestCamera() {
   const [busy, setBusy] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
+  // iOS Safari has no way to lock page orientation, so when a guest rotates
+  // the phone the layout has to adapt, otherwise controls anchored to the
+  // "bottom" end up on the phone's long edge, out of thumb's reach. Both
+  // landscape side edges are always the phone's short edges regardless of
+  // which way it's rotated, so controls just need to move to a side edge.
+  const [isLandscape, setIsLandscape] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: landscape)");
+    const update = () => setIsLandscape(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
   // Lock the page into a true full-screen, no-scroll, no-pinch-zoom camera shell.
   useEffect(() => {
     const prevHtmlOverflow = document.documentElement.style.overflow;
@@ -498,10 +512,18 @@ function GuestCamera() {
         </div>
       </div>
 
-      {/* Shot counter overlay (sits above the shutter) */}
+      {/* Shot counter overlay (sits next to the controls) */}
       <div
-        className="absolute inset-x-0 z-20 flex flex-col items-center gap-2 pointer-events-none"
-        style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 130px)" }}
+        className="absolute z-20 flex flex-col items-center gap-2 pointer-events-none"
+        style={
+          isLandscape
+            ? {
+                top: "50%",
+                right: "calc(env(safe-area-inset-right, 0px) + 110px)",
+                transform: "translateY(-50%)",
+              }
+            : { left: 0, right: 0, bottom: "calc(env(safe-area-inset-bottom, 0px) + 130px)" }
+        }
       >
         <FilmDots taken={status.shotsTaken} total={status.shotsPerGuest} />
         <div className="text-center leading-none">
@@ -515,10 +537,35 @@ function GuestCamera() {
         </div>
       </div>
 
-      {/* Bottom controls overlay — superpuesto a la imagen */}
+      {/* Controls overlay — bottom edge in portrait, but the "bottom" of a
+          landscape viewport is the phone's long edge, out of thumb's reach.
+          Both landscape side edges are always the short edges regardless of
+          rotation direction, so pin it to the right edge instead. */}
       <div
-        className="absolute bottom-0 inset-x-0 z-20 px-8 flex items-center justify-between bg-gradient-to-t from-black/60 to-transparent"
-        style={{ paddingTop: 24, paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
+        className={`absolute z-20 flex items-center justify-between from-black/60 to-transparent ${
+          isLandscape ? "flex-col bg-gradient-to-l" : "flex-row bg-gradient-to-t"
+        }`}
+        style={
+          isLandscape
+            ? {
+                top: 0,
+                bottom: 0,
+                right: 0,
+                paddingTop: 32,
+                paddingBottom: 32,
+                paddingLeft: 24,
+                paddingRight: "calc(env(safe-area-inset-right, 0px) + 16px)",
+              }
+            : {
+                left: 0,
+                right: 0,
+                bottom: 0,
+                paddingLeft: 32,
+                paddingRight: 32,
+                paddingTop: 24,
+                paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
+              }
+        }
       >
         <div className="w-12 flex justify-start">
           {facing === "user" && (
