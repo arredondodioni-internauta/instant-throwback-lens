@@ -100,15 +100,36 @@ function GuestCamera() {
   // iOS Safari has no way to lock page orientation, so when a guest rotates
   // the phone the layout has to adapt, otherwise controls anchored to the
   // "bottom" end up on the phone's long edge, out of thumb's reach. Both
-  // landscape side edges are always the phone's short edges regardless of
-  // which way it's rotated, so controls just need to move to a side edge.
+  // landscape side edges are always the phone's short edges, but which one
+  // is actually near the thumb depends on which way the phone was rotated
+  // (left hand vs right hand), so we also need the rotation direction, not
+  // just "is it landscape".
   const [isLandscape, setIsLandscape] = useState(false);
+  const [dockRight, setDockRight] = useState(true);
   useEffect(() => {
     const mq = window.matchMedia("(orientation: landscape)");
-    const update = () => setIsLandscape(mq.matches);
+    function update() {
+      setIsLandscape(mq.matches);
+      if (!mq.matches) return;
+      const type = (screen.orientation && screen.orientation.type) || "";
+      if (type === "landscape-primary") {
+        setDockRight(true);
+      } else if (type === "landscape-secondary") {
+        setDockRight(false);
+      } else if (typeof window.orientation === "number") {
+        // Older iOS Safari fallback (screen.orientation.type unsupported).
+        setDockRight(window.orientation === 90);
+      }
+      // If neither API tells us the direction, leave dockRight as-is rather
+      // than guessing, so it doesn't flip erratically mid-session.
+    }
     update();
     mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      mq.removeEventListener("change", update);
+      window.removeEventListener("orientationchange", update);
+    };
   }, []);
 
   // Lock the page into a true full-screen, no-scroll, no-pinch-zoom camera shell.
@@ -517,11 +538,17 @@ function GuestCamera() {
         className="absolute z-20 flex flex-col items-center gap-2 pointer-events-none"
         style={
           isLandscape
-            ? {
-                top: "50%",
-                right: "calc(env(safe-area-inset-right, 0px) + 110px)",
-                transform: "translateY(-50%)",
-              }
+            ? dockRight
+              ? {
+                  top: "50%",
+                  right: "calc(env(safe-area-inset-right, 0px) + 110px)",
+                  transform: "translateY(-50%)",
+                }
+              : {
+                  top: "50%",
+                  left: "calc(env(safe-area-inset-left, 0px) + 110px)",
+                  transform: "translateY(-50%)",
+                }
             : { left: 0, right: 0, bottom: "calc(env(safe-area-inset-bottom, 0px) + 130px)" }
         }
       >
@@ -539,23 +566,33 @@ function GuestCamera() {
 
       {/* Controls overlay — bottom edge in portrait, but the "bottom" of a
           landscape viewport is the phone's long edge, out of thumb's reach.
-          Both landscape side edges are always the short edges regardless of
-          rotation direction, so pin it to the right edge instead. */}
+          Docks to whichever side edge is actually near the thumb for the
+          current rotation direction (left-hand vs right-hand hold). */}
       <div
         className={`absolute z-20 flex items-center justify-between from-black/60 to-transparent ${
-          isLandscape ? "flex-col bg-gradient-to-l" : "flex-row bg-gradient-to-t"
+          isLandscape ? `flex-col ${dockRight ? "bg-gradient-to-l" : "bg-gradient-to-r"}` : "flex-row bg-gradient-to-t"
         }`}
         style={
           isLandscape
-            ? {
-                top: 0,
-                bottom: 0,
-                right: 0,
-                paddingTop: 32,
-                paddingBottom: 32,
-                paddingLeft: 24,
-                paddingRight: "calc(env(safe-area-inset-right, 0px) + 16px)",
-              }
+            ? dockRight
+              ? {
+                  top: 0,
+                  bottom: 0,
+                  right: 0,
+                  paddingTop: 32,
+                  paddingBottom: 32,
+                  paddingLeft: 24,
+                  paddingRight: "calc(env(safe-area-inset-right, 0px) + 16px)",
+                }
+              : {
+                  top: 0,
+                  bottom: 0,
+                  left: 0,
+                  paddingTop: 32,
+                  paddingBottom: 32,
+                  paddingRight: 24,
+                  paddingLeft: "calc(env(safe-area-inset-left, 0px) + 16px)",
+                }
             : {
                 left: 0,
                 right: 0,
