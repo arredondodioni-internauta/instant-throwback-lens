@@ -246,19 +246,12 @@ function AlbumPage() {
     );
   }
 
-  const expiresAt = data.event.expiresAt ? new Date(data.event.expiresAt) : null;
-  const expiresIn = expiresAt ? Math.max(0, expiresAt.getTime() - Date.now()) : 0;
-  const expiresDays = Math.floor(expiresIn / (24 * 60 * 60 * 1000));
-  const expiresHours = Math.floor((expiresIn % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-
   return (
     <main className="min-h-screen bg-black text-white pb-24">
       <header className="sticky top-0 z-10 backdrop-blur bg-black/70 border-b border-white/10 px-4 py-3 flex items-center justify-between">
         <div>
           <h1 className="font-serif text-lg leading-tight">{data.event.name}</h1>
-          <p className="text-xs text-white/50">
-            {photos.length} fotos · expira en {expiresDays}d {expiresHours}h
-          </p>
+          <p className="text-xs text-white/50">{photos.length} fotos</p>
         </div>
         {selectMode ? (
           <div className="flex items-center gap-2">

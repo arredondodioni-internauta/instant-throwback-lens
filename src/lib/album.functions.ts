@@ -29,14 +29,13 @@ export const publishAlbum = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { userId } = context;
     const now = new Date();
-    const expires = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
     const { data: ev, error } = await supabaseAdmin
       .from("events")
       .update({
         status: "ended",
         ended_at: now.toISOString(),
         album_published_at: now.toISOString(),
-        album_expires_at: expires.toISOString(),
+        album_expires_at: null,
       })
       .eq("id", data.eventId)
       .eq("host_id", userId)

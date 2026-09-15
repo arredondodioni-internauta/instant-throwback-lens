@@ -137,12 +137,6 @@ function EventDashboard() {
   if (!data) return <main className="p-10 text-muted-foreground">Loading…</main>;
   const { event, guestCount, photoCount } = data;
   const isPublished = !!event.album_published_at;
-  const expiresAt = event.album_expires_at ? new Date(event.album_expires_at) : null;
-  const expiresIn = expiresAt
-    ? Math.max(0, expiresAt.getTime() - Date.now())
-    : 0;
-  const expiresDays = Math.floor(expiresIn / (24 * 60 * 60 * 1000));
-  const expiresHours = Math.floor((expiresIn % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
 
   return (
     <main className="max-w-3xl mx-auto px-6 py-10">
@@ -215,7 +209,7 @@ function EventDashboard() {
             <h2 className="font-serif text-xl">Álbum publicado</h2>
           </div>
           <p className="text-sm text-muted-foreground mb-4">
-            Expira en {expiresDays}d {expiresHours}h
+            Disponible indefinidamente
           </p>
           <div className="flex flex-col sm:flex-row gap-6 items-center">
             {albumQr && (
