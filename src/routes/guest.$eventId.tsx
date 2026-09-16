@@ -216,7 +216,7 @@ function GuestCamera() {
       .then((s) => {
         setStatus(s);
         // Fire-and-forget: subscribe this device to push so we can notify when album publishes
-        subscribeToAlbumPush(eventId, s.displayName);
+        subscribeToAlbumPush(eventId, s.displayName, s.guestId);
       })
       .catch((err: any) => {
         const msg = err?.message ?? "";

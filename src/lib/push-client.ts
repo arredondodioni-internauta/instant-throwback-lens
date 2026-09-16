@@ -26,7 +26,7 @@ function getOrCreateViewerToken(): string {
  * Request notification permission and subscribe this device to push for the given event.
  * Safe to call multiple times; no-ops if unsupported or already denied.
  */
-export async function subscribeToAlbumPush(eventId: string, nickname?: string) {
+export async function subscribeToAlbumPush(eventId: string, nickname?: string, guestId?: string) {
   try {
     if (typeof window === "undefined") return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
@@ -58,6 +58,7 @@ export async function subscribeToAlbumPush(eventId: string, nickname?: string) {
         eventId,
         viewerToken,
         nickname,
+        guestId,
         subscription: sub.toJSON(),
       },
     });

@@ -36,17 +36,15 @@ async function importVapidPrivateKey(privateKeyB64Url: string, publicKeyB64Url: 
     y,
     ext: true,
   } as JsonWebKey;
-  return await crypto.subtle.importKey(
-    "jwk",
-    jwk,
-    { name: "ECDSA", namedCurve: "P-256" },
-    false,
-    ["sign"],
-  );
+  return await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, [
+    "sign",
+  ]);
 }
 
 async function buildVapidAuthHeader(audience: string, subject: string) {
-  const pub = process.env.VAPID_PUBLIC_KEY ?? "BE6B7CoRO4rIAMV45Xv3eIhaahNSSd6EzB6vYJWUHKVmC2Tq9T8Li9AQKKkU947-JG-Ny0f1WURHvQiaQs67m_o";
+  const pub =
+    process.env.VAPID_PUBLIC_KEY ??
+    "BE6B7CoRO4rIAMV45Xv3eIhaahNSSd6EzB6vYJWUHKVmC2Tq9T8Li9AQKKkU947-JG-Ny0f1WURHvQiaQs67m_o";
   const priv = process.env.VAPID_PRIVATE_KEY;
   if (!pub || !priv) throw new Error("VAPID keys not configured");
 
@@ -58,8 +56,7 @@ async function buildVapidAuthHeader(audience: string, subject: string) {
     exp: Math.floor(Date.now() / 1000) + 12 * 60 * 60,
     sub: subject,
   };
-  const enc = (o: object) =>
-    b64urlEncode(new TextEncoder().encode(JSON.stringify(o)));
+  const enc = (o: object) => b64urlEncode(new TextEncoder().encode(JSON.stringify(o)));
   const signingInput = `${enc(header)}.${enc(payload)}`;
   const sig = await crypto.subtle.sign(
     { name: "ECDSA", hash: "SHA-256" },
@@ -70,39 +67,132 @@ async function buildVapidAuthHeader(audience: string, subject: string) {
   return { jwt, publicKey: pub };
 }
 
-async function sendPushTo(
-  subscription: { endpoint: string; keys?: { p256dh?: string; auth?: string } },
-  payload: string,
-) {
+type PushSubscriptionLike = {
+  endpoint: string;
+  keys?: { p256dh?: string; auth?: string };
+};
+
+// RFC 8291 Web Push payload encryption (aes128gcm), using the subscription's
+// ECDH public key (p256dh) and auth secret. Lets a push carry its own
+// {title, body, tag, url} instead of an empty "tickle" body.
+async function hkdf(salt: Uint8Array, ikm: Uint8Array, info: Uint8Array, length: number) {
+  const key = await crypto.subtle.importKey("raw", ikm.buffer as ArrayBuffer, "HKDF", false, [
+    "deriveBits",
+  ]);
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: salt.buffer as ArrayBuffer,
+      info: info.buffer as ArrayBuffer,
+    },
+    key,
+    length * 8,
+  );
+  return new Uint8Array(bits);
+}
+
+async function encryptWebPushPayload(
+  subscription: PushSubscriptionLike,
+  payload: object,
+): Promise<Uint8Array | null> {
+  const p256dh = subscription.keys?.p256dh;
+  const auth = subscription.keys?.auth;
+  if (!p256dh || !auth) return null;
+
+  const uaPublicRaw = b64urlDecode(p256dh);
+  const authSecret = b64urlDecode(auth);
+
+  const uaPublicKey = await crypto.subtle.importKey(
+    "raw",
+    uaPublicRaw.buffer as ArrayBuffer,
+    { name: "ECDH", namedCurve: "P-256" },
+    false,
+    [],
+  );
+  const asKeyPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, [
+    "deriveBits",
+  ]);
+  const asPublicRaw = new Uint8Array(await crypto.subtle.exportKey("raw", asKeyPair.publicKey));
+
+  const sharedSecret = new Uint8Array(
+    await crypto.subtle.deriveBits(
+      { name: "ECDH", public: uaPublicKey },
+      asKeyPair.privateKey,
+      256,
+    ),
+  );
+
+  const enc = new TextEncoder();
+  const keyInfo = new Uint8Array([
+    ...enc.encode("WebPush: info\0"),
+    ...uaPublicRaw,
+    ...asPublicRaw,
+  ]);
+  const ikm = await hkdf(authSecret, sharedSecret, keyInfo, 32);
+
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const cek = await hkdf(salt, ikm, enc.encode("Content-Encoding: aes128gcm\0"), 16);
+  const nonce = await hkdf(salt, ikm, enc.encode("Content-Encoding: nonce\0"), 12);
+  const cekKey = await crypto.subtle.importKey("raw", cek.buffer as ArrayBuffer, "AES-GCM", false, [
+    "encrypt",
+  ]);
+
+  const plaintext = enc.encode(JSON.stringify(payload));
+  // Single-record message: append the 0x02 "last record" delimiter, no further padding.
+  const padded = new Uint8Array(plaintext.length + 1);
+  padded.set(plaintext, 0);
+  padded[plaintext.length] = 0x02;
+
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv: nonce.buffer as ArrayBuffer, tagLength: 128 },
+      cekKey,
+      padded.buffer as ArrayBuffer,
+    ),
+  );
+
+  const recordSize = 4096;
+  const header = new Uint8Array(16 + 4 + 1 + asPublicRaw.length);
+  header.set(salt, 0);
+  new DataView(header.buffer).setUint32(16, recordSize, false);
+  header[20] = asPublicRaw.length;
+  header.set(asPublicRaw, 21);
+
+  const body = new Uint8Array(header.length + ciphertext.length);
+  body.set(header, 0);
+  body.set(ciphertext, header.length);
+  return body;
+}
+
+async function sendPushTo(subscription: PushSubscriptionLike, payload?: object) {
   const url = new URL(subscription.endpoint);
   const audience = `${url.protocol}//${url.host}`;
   const subject = process.env.VAPID_SUBJECT ?? "mailto:hello@reel.app";
   const { jwt, publicKey } = await buildVapidAuthHeader(audience, subject);
 
-  // For simplicity we send notification metadata via headers + empty body.
-  // Encrypting the payload with aes128gcm (RFC 8291) is non-trivial in workers;
-  // we deliver a tickle-style push and the SW falls back to a default message
-  // when no payload is present. The SW reads notification config from a follow-up
-  // fetch keyed on event code if needed. For v1 the SW shows a static message
-  // and the click handler navigates using a query param embedded in endpoint? No —
-  // we attach data via the SW pulling from a known URL using the data field. Here
-  // we just deliver an unencrypted tickle and let the SW show a default copy.
+  const encryptedBody = payload ? await encryptWebPushPayload(subscription, payload) : null;
+
+  const headers: Record<string, string> = {
+    TTL: "86400",
+    Authorization: `vapid t=${jwt}, k=${publicKey}`,
+  };
+  if (encryptedBody) {
+    headers["Content-Encoding"] = "aes128gcm";
+    headers["Content-Type"] = "application/octet-stream";
+  } else {
+    headers["Content-Length"] = "0";
+  }
+
   const res = await fetch(subscription.endpoint, {
     method: "POST",
-    headers: {
-      TTL: "86400",
-      Authorization: `vapid t=${jwt}, k=${publicKey}`,
-      "Content-Length": "0",
-    },
+    headers,
+    body: encryptedBody ? (encryptedBody.buffer as ArrayBuffer) : undefined,
   });
   return res;
 }
 
-export async function sendAlbumPublishedPush(
-  eventId: string,
-  _eventName: string,
-  _code: string,
-) {
+export async function sendAlbumPublishedPush(eventId: string, eventName: string, code: string) {
   const { data: viewers } = await supabaseAdmin
     .from("album_viewers")
     .select("id, push_subscription")
@@ -111,12 +201,19 @@ export async function sendAlbumPublishedPush(
 
   if (!viewers?.length) return { sent: 0 };
 
+  const payload = {
+    title: "🎞️ Tu álbum está listo",
+    body: `El álbum de "${eventName}" ya está disponible. Ábrelo para verlo.`,
+    tag: "album-published",
+    url: `/album/${code}`,
+  };
+
   let sent = 0;
   for (const v of viewers) {
     try {
-      const sub = v.push_subscription as any;
+      const sub = v.push_subscription as unknown as PushSubscriptionLike;
       if (!sub?.endpoint) continue;
-      const res = await sendPushTo(sub, "");
+      const res = await sendPushTo(sub, payload);
       if (res.status === 410 || res.status === 404) {
         // Subscription gone, clean up
         await supabaseAdmin
@@ -131,4 +228,94 @@ export async function sendAlbumPublishedPush(
     }
   }
   return { sent };
+}
+
+type ReminderTier = {
+  delayMs: number;
+  sentColumn: "camera_reminder_sent_at" | "camera_reminder_test_sent_at";
+};
+
+// Guests where `tier.sentColumn` is still null, whose event is still active,
+// and who have a linked push subscription (via album_viewers.guest_id).
+async function sendCameraReminderTier(tier: ReminderTier) {
+  const { data: candidates, error } = await supabaseAdmin
+    .from("guests")
+    .select("id, event_id, events!inner(status)")
+    .is(tier.sentColumn, null)
+    .lte("created_at", new Date(Date.now() - tier.delayMs).toISOString())
+    .eq("events.status", "active");
+
+  if (error) throw new Error(error.message);
+  if (!candidates?.length) return { sent: 0, skipped: 0 };
+
+  const guestIds = candidates.map((g) => g.id);
+  const { data: subscriptions, error: subsError } = await supabaseAdmin
+    .from("album_viewers")
+    .select("id, guest_id, push_subscription")
+    .in("guest_id", guestIds)
+    .not("push_subscription", "is", null);
+  if (subsError) throw new Error(subsError.message);
+
+  const subByGuestId = new Map((subscriptions ?? []).map((s) => [s.guest_id as string, s]));
+
+  const payload = {
+    title: "📸 ¡No olvides tomar fotos!",
+    body: "Toca para abrir la cámara y seguir capturando el momento.",
+    tag: "camera-reminder",
+  };
+
+  let sent = 0;
+  let skipped = 0;
+  for (const guest of candidates) {
+    const viewer = subByGuestId.get(guest.id);
+    const sub = viewer?.push_subscription as unknown as PushSubscriptionLike | undefined;
+    if (!sub?.endpoint) {
+      // No subscription yet — leave unmarked so a later tick can still catch them.
+      skipped++;
+      continue;
+    }
+    try {
+      const res = await sendPushTo(sub, { ...payload, url: `/guest/${guest.event_id}` });
+      if (res.status === 410 || res.status === 404) {
+        await supabaseAdmin
+          .from("album_viewers")
+          .update({ push_subscription: null })
+          .eq("id", viewer!.id);
+        skipped++;
+        continue;
+      }
+      if (res.ok || res.status === 201 || res.status === 202) sent++;
+      // Mark as sent regardless of a transient non-2xx: this is a best-effort
+      // fire-and-forget push, same tolerance as sendAlbumPublishedPush. Avoids
+      // retry storms against a push endpoint that's failing for another reason.
+      const now = new Date().toISOString();
+      const update =
+        tier.sentColumn === "camera_reminder_sent_at"
+          ? { camera_reminder_sent_at: now }
+          : { camera_reminder_test_sent_at: now };
+      await supabaseAdmin.from("guests").update(update).eq("id", guest.id);
+    } catch (e) {
+      console.error("camera reminder push send error", e);
+    }
+  }
+  return { sent, skipped };
+}
+
+export async function sendCameraReminderPushes() {
+  // TODO(testing): remove the 30s tier once the 1h reminder is confirmed working
+  // end-to-end — it exists purely so this can be tested without a real hour-long wait.
+  const test30s = await sendCameraReminderTier({
+    delayMs: 30 * 1000,
+    sentColumn: "camera_reminder_test_sent_at",
+  });
+  const oneHour = await sendCameraReminderTier({
+    delayMs: 60 * 60 * 1000,
+    sentColumn: "camera_reminder_sent_at",
+  });
+  return {
+    sent: test30s.sent + oneHour.sent,
+    skipped: test30s.skipped + oneHour.skipped,
+    test30s,
+    oneHour,
+  };
 }

@@ -43,6 +43,7 @@ export type Database = {
         Row: {
           created_at: string
           event_id: string
+          guest_id: string | null
           id: string
           nickname: string | null
           push_subscription: Json | null
@@ -52,6 +53,7 @@ export type Database = {
         Insert: {
           created_at?: string
           event_id: string
+          guest_id?: string | null
           id?: string
           nickname?: string | null
           push_subscription?: Json | null
@@ -61,6 +63,7 @@ export type Database = {
         Update: {
           created_at?: string
           event_id?: string
+          guest_id?: string | null
           id?: string
           nickname?: string | null
           push_subscription?: Json | null
@@ -73,6 +76,13 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "album_viewers_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guests"
             referencedColumns: ["id"]
           },
         ]
@@ -163,6 +173,8 @@ export type Database = {
       }
       guests: {
         Row: {
+          camera_reminder_sent_at: string | null
+          camera_reminder_test_sent_at: string | null
           created_at: string
           device_token: string
           display_name: string
@@ -170,6 +182,8 @@ export type Database = {
           id: string
         }
         Insert: {
+          camera_reminder_sent_at?: string | null
+          camera_reminder_test_sent_at?: string | null
           created_at?: string
           device_token?: string
           display_name: string
@@ -177,6 +191,8 @@ export type Database = {
           id?: string
         }
         Update: {
+          camera_reminder_sent_at?: string | null
+          camera_reminder_test_sent_at?: string | null
           created_at?: string
           device_token?: string
           display_name?: string

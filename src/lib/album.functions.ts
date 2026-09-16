@@ -242,6 +242,7 @@ export const registerPushSubscription = createServerFn({ method: "POST" })
       eventId: uuidSchema,
       viewerToken: uuidSchema,
       nickname: z.string().max(60).optional(),
+      guestId: uuidSchema.optional(),
       subscription: z.any(),
     }).parse(input),
   )
@@ -253,6 +254,7 @@ export const registerPushSubscription = createServerFn({ method: "POST" })
           event_id: data.eventId,
           viewer_token: data.viewerToken,
           nickname: data.nickname ?? null,
+          guest_id: data.guestId ?? null,
           push_subscription: data.subscription,
           updated_at: new Date().toISOString(),
         },

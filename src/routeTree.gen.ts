@@ -17,6 +17,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as GuestEventIdRouteImport } from './routes/guest.$eventId'
 import { Route as AlbumCodeRouteImport } from './routes/album.$code'
 import { Route as HostEventsIndexRouteImport } from './routes/_host.events.index'
+import { Route as ApiCronCameraRemindersRouteImport } from './routes/api.cron.camera-reminders'
 import { Route as HostEventsNewRouteImport } from './routes/_host.events.new'
 import { Route as HostEventsEventIdRouteImport } from './routes/_host.events.$eventId'
 
@@ -59,6 +60,11 @@ const HostEventsIndexRoute = HostEventsIndexRouteImport.update({
   path: '/events/',
   getParentRoute: () => HostRoute,
 } as any)
+const ApiCronCameraRemindersRoute = ApiCronCameraRemindersRouteImport.update({
+  id: '/api/cron/camera-reminders',
+  path: '/api/cron/camera-reminders',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HostEventsNewRoute = HostEventsNewRouteImport.update({
   id: '/events/new',
   path: '/events/new',
@@ -79,6 +85,7 @@ export interface FileRoutesByFullPath {
   '/guest/$eventId': typeof GuestEventIdRoute
   '/events/$eventId': typeof HostEventsEventIdRoute
   '/events/new': typeof HostEventsNewRoute
+  '/api/cron/camera-reminders': typeof ApiCronCameraRemindersRoute
   '/events/': typeof HostEventsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -90,6 +97,7 @@ export interface FileRoutesByTo {
   '/guest/$eventId': typeof GuestEventIdRoute
   '/events/$eventId': typeof HostEventsEventIdRoute
   '/events/new': typeof HostEventsNewRoute
+  '/api/cron/camera-reminders': typeof ApiCronCameraRemindersRoute
   '/events': typeof HostEventsIndexRoute
 }
 export interface FileRoutesById {
@@ -103,6 +111,7 @@ export interface FileRoutesById {
   '/guest/$eventId': typeof GuestEventIdRoute
   '/_host/events/$eventId': typeof HostEventsEventIdRoute
   '/_host/events/new': typeof HostEventsNewRoute
+  '/api/cron/camera-reminders': typeof ApiCronCameraRemindersRoute
   '/_host/events/': typeof HostEventsIndexRoute
 }
 export interface FileRouteTypes {
@@ -116,6 +125,7 @@ export interface FileRouteTypes {
     | '/guest/$eventId'
     | '/events/$eventId'
     | '/events/new'
+    | '/api/cron/camera-reminders'
     | '/events/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -127,6 +137,7 @@ export interface FileRouteTypes {
     | '/guest/$eventId'
     | '/events/$eventId'
     | '/events/new'
+    | '/api/cron/camera-reminders'
     | '/events'
   id:
     | '__root__'
@@ -139,6 +150,7 @@ export interface FileRouteTypes {
     | '/guest/$eventId'
     | '/_host/events/$eventId'
     | '/_host/events/new'
+    | '/api/cron/camera-reminders'
     | '/_host/events/'
   fileRoutesById: FileRoutesById
 }
@@ -150,6 +162,7 @@ export interface RootRouteChildren {
   SignupRoute: typeof SignupRoute
   AlbumCodeRoute: typeof AlbumCodeRoute
   GuestEventIdRoute: typeof GuestEventIdRoute
+  ApiCronCameraRemindersRoute: typeof ApiCronCameraRemindersRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -210,6 +223,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HostEventsIndexRouteImport
       parentRoute: typeof HostRoute
     }
+    '/api/cron/camera-reminders': {
+      id: '/api/cron/camera-reminders'
+      path: '/api/cron/camera-reminders'
+      fullPath: '/api/cron/camera-reminders'
+      preLoaderRoute: typeof ApiCronCameraRemindersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_host/events/new': {
       id: '/_host/events/new'
       path: '/events/new'
@@ -249,6 +269,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignupRoute: SignupRoute,
   AlbumCodeRoute: AlbumCodeRoute,
   GuestEventIdRoute: GuestEventIdRoute,
+  ApiCronCameraRemindersRoute: ApiCronCameraRemindersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
